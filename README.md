@@ -8,35 +8,43 @@ Supports every hardware manager buttplug-rs ships with: BLE (via [btleplug](http
 
 ---
 
-## Install
+## 🤖 Disclaimer
 
-GMod binary modules use the same `.dll` extension on every platform, but the filename must match your OS and your GMod branch (`x86-64` beta vs. the 32-bit main branch). Rename the artifact accordingly:
+This project was mostly vibecoded with [Claude Code](https://claude.com/claude-code). A human drove the design decisions, reviewed the diffs, and ran the builds, but the bulk of the Rust and Lua was drafted by the model. Treat it accordingly: the code works and has been smoke-tested, but if something looks suspicious, trust your eyes — raise an issue or a PR.
 
-| Platform | Build output | Final filename |
-|---|---|---|
-| Windows x86_64 (x86-64 beta) | `gmcl_buttplug.dll` | `gmcl_buttplug_win64.dll` |
-| Windows x86 (main branch) | `gmcl_buttplug.dll` | `gmcl_buttplug_win32.dll` |
-| Linux x86_64 (x86-64 beta) | `libgmcl_buttplug.so` | `gmcl_buttplug_linux64.dll` |
-| Linux x86 (main branch) | `libgmcl_buttplug.so` | `gmcl_buttplug_linux.dll` |
-| macOS x86_64 (x86-64 beta) | `libgmcl_buttplug.dylib` | `gmcl_buttplug_osx64.dll` |
+## 📦 Install
 
-Then drop the renamed file into `garrysmod/lua/bin/` (create the directory if it doesn't exist) and `require("buttplug")` from any clientside Lua file.
+GMod binary modules use the `.dll` extension on every platform; the suffix on the filename tells GMod which OS/branch it belongs to. Grab the file matching your platform:
+
+| Platform | Filename |
+|---|---|
+| Windows x86_64 (x86-64 beta) | `gmcl_buttplug_win64.dll` |
+| Windows x86 (main branch) | `gmcl_buttplug_win32.dll` |
+| Linux x86_64 (x86-64 beta) | `gmcl_buttplug_linux64.dll` |
+| Linux x86 (main branch) | `gmcl_buttplug_linux.dll` |
+| macOS x86_64 (x86-64 beta) | `gmcl_buttplug_osx64.dll` |
+
+Drop it into `garrysmod/lua/bin/` (create the directory if it doesn't exist) and `require("buttplug")` from any clientside Lua file.
 
 Currently client-only. A serverside variant (`gmsv_`) may come later.
 
-## Build
+On module load, gmod-buttplug pings the GitHub Releases API in the background and prints a one-line notice to the console if a newer version is available.
+
+## 🔨 Build
 
 Requires Rust nightly (transitive dependency of [gmod-rs](https://github.com/WilliamVenner/gmod-rs)'s `gmcl` feature). The `rust-toolchain.toml` in this repo pins nightly automatically.
 
-### Windows x86_64
+All commands use `cargo xtask build`, which compiles the release cdylib and writes the GMod-named `gmcl_buttplug_<platform>.dll` alongside it in one shot — no manual rename step.
+
+### 🪟 Windows x86_64
 
 ```sh
-cargo build --release --target x86_64-pc-windows-msvc
+cargo xtask build --target x86_64-pc-windows-msvc
 ```
 
-Output: `target/x86_64-pc-windows-msvc/release/gmcl_buttplug.dll`.
+Output: `target/x86_64-pc-windows-msvc/release/gmcl_buttplug_win64.dll`.
 
-### Linux x86_64
+### 🐧 Linux x86_64
 
 System dependencies (Debian/Ubuntu):
 
@@ -48,27 +56,29 @@ sudo apt-get install libdbus-1-dev libudev-dev pkg-config
 
 ```sh
 rustup target add x86_64-unknown-linux-gnu
-cargo build --release --target x86_64-unknown-linux-gnu
+cargo xtask build --target x86_64-unknown-linux-gnu
 ```
 
-Output: `target/x86_64-unknown-linux-gnu/release/libgmcl_buttplug.so`.
+Output: `target/x86_64-unknown-linux-gnu/release/gmcl_buttplug_linux64.dll`.
 
-### macOS x86_64
+### 🍎 macOS x86_64
 
 GMod's macOS build is Intel-only; even on Apple Silicon, build for `x86_64-apple-darwin` so the artifact loads under Rosetta. No extra system deps — everything links against system frameworks (CoreBluetooth, IOKit) bundled with Xcode CLT.
 
 ```sh
 rustup target add x86_64-apple-darwin
-cargo build --release --target x86_64-apple-darwin
+cargo xtask build --target x86_64-apple-darwin
 ```
 
-Output: `target/x86_64-apple-darwin/release/libgmcl_buttplug.dylib`.
+Output: `target/x86_64-apple-darwin/release/gmcl_buttplug_osx64.dll`.
 
 ### Prebuilt binaries
 
-Every push to `main` produces artifacts for all three platforms via [GitHub Actions](.github/workflows/build.yml). Grab the matching artifact from the latest run and rename per the Install table.
+Every push to `main` produces artifacts for all three platforms via [GitHub Actions](.github/workflows/build.yml); the filenames match the Install table above, ready to drop in.
 
-## Platform notes
+Tagged releases attach the same three artifacts to a [GitHub Release](https://github.com/SummerBasilisk/gmod-buttplug/releases) — the recommended download source for end users.
+
+## 🖥️ Platform notes
 
 **Windows.** BLE works out of the box via WinRT. XInput is compiled in (Xbox-style controllers). No additional services required.
 
@@ -76,7 +86,7 @@ Every push to `main` produces artifacts for all three platforms via [GitHub Acti
 
 **macOS.** GMod itself doesn't ship with a Bluetooth usage-description entitlement, so modern macOS (Catalina+) will silently deny BLE access to the GMod process. Non-BLE managers (HID, serial, Lovense Connect) still work. This is a GMod limitation, not a limitation of this module.
 
-## Lua API
+## 📘 Lua API
 
 All calls are fire-and-forget. Lifecycle progress and errors arrive as `hook.Run("Buttplug<Name>", ...)` — never via return values.
 
@@ -118,14 +128,10 @@ Speeds and positions use the Percent convention (`0..1` floats), matching buttpl
 | `ButtplugDeviceRemoved` | `dev: Device` | A device disconnected. |
 | `ButtplugError` | `err: string` | The client surfaced an error. |
 
-## Example
+## 💡 Example
 
 See [`examples/autorun.lua`](examples/autorun.lua) for a minimal demo — hook listeners, console commands, and a damage-reactive vibrate.
 
-## Disclaimer
-
-This project was mostly vibecoded with [Claude Code](https://claude.com/claude-code). A human drove the design decisions, reviewed the diffs, and ran the builds, but the bulk of the Rust and Lua was drafted by the model. Treat it accordingly: the code works and has been smoke-tested, but if something looks suspicious, trust your eyes — raise an issue or a PR.
-
-## License
+## ⚖️ License
 
 BSD-3-Clause, matching buttplug-rs. See [`LICENSE`](LICENSE) for the full text — gmod-buttplug's own copyright and buttplug-rs's upstream copyright are both reproduced there, since distributed binaries statically link buttplug-rs.

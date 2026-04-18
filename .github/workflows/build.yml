@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -17,17 +17,14 @@ jobs:
           - label: windows-x86_64
             os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact: gmcl_buttplug.dll
             final: gmcl_buttplug_win64.dll
           - label: linux-x86_64
             os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact: libgmcl_buttplug.so
             final: gmcl_buttplug_linux64.dll
           - label: macos-x86_64
             os: macos-13  # Intel runner — matches GMod's x86_64 macOS build
             target: x86_64-apple-darwin
-            artifact: libgmcl_buttplug.dylib
             final: gmcl_buttplug_osx64.dll
 
     steps:
@@ -50,13 +47,9 @@ jobs:
           key: ${{ matrix.target }}
 
       - name: Build (release)
-        run: cargo build --release --target ${{ matrix.target }}
-
-      - name: Rename artifact to GMod naming convention
-        shell: bash
-        run: |
-          cd target/${{ matrix.target }}/release
-          cp "${{ matrix.artifact }}" "${{ matrix.final }}"
+        # `cargo xtask build` compiles the cdylib AND writes the GMod-named
+        # artifact (gmcl_buttplug_<platform>.dll) alongside it in one step.
+        run: cargo xtask build --target ${{ matrix.target }}
 
       - name: Upload binary
         uses: actions/upload-artifact@v4

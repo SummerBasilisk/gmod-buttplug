@@ -1,0 +1,145 @@
+name: Release
+
+# Manually-triggered release. Reads the current version out of Cargo.toml,
+# builds all three platform artifacts via `cargo xtask build`, tags the repo
+# with `vX.Y.Z`, and attaches the renamed DLLs to a GitHub Release.
+#
+# Workflow:
+#   1. Bump `version = "X.Y.Z"` in Cargo.toml and push to main.
+#   2. Run this workflow from the Actions tab (defaults to draft).
+#   3. Review the draft release, then publish it when ready.
+
+on:
+  workflow_dispatch:
+    inputs:
+      draft:
+        description: 'Publish as draft (recommended — lets you review before making it public)'
+        type: boolean
+        default: true
+      prerelease:
+        description: 'Mark as prerelease'
+        type: boolean
+        default: false
+
+jobs:
+  prepare:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # need full history to check existing tags
+
+      - name: Read version from Cargo.toml
+        id: v
+        run: |
+          version=$(awk -F'"' '/^version = / {print $2; exit}' Cargo.toml)
+          if [ -z "$version" ]; then
+            echo "could not parse version from Cargo.toml"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "resolved version: $version"
+
+      - name: Abort if tag v${{ steps.v.outputs.version }} already exists
+        run: |
+          tag="v${{ steps.v.outputs.version }}"
+          if git rev-parse "$tag" >/dev/null 2>&1; then
+            echo "::error::tag $tag already exists; bump the version in Cargo.toml first"
+            exit 1
+          fi
+
+  build:
+    needs: prepare
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - label: windows-x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            final: gmcl_buttplug_win64.dll
+          - label: linux-x86_64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            final: gmcl_buttplug_linux64.dll
+          - label: macos-x86_64
+            os: macos-13
+            target: x86_64-apple-darwin
+            final: gmcl_buttplug_osx64.dll
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev libudev-dev pkg-config
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+
+      - name: Build (release)
+        run: cargo xtask build --target ${{ matrix.target }}
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.final }}
+          path: target/${{ matrix.target }}/release/${{ matrix.final }}
+          if-no-files-found: error
+
+  release:
+    needs: [prepare, build]
+    name: Tag and publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # required for creating tags and releases
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ github.token }}
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Create and push tag
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "v$VERSION" -m "Release v$VERSION"
+          git push origin "v$VERSION"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          DRAFT: ${{ inputs.draft }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          flags=()
+          [ "$DRAFT"      = "true" ] && flags+=(--draft)
+          [ "$PRERELEASE" = "true" ] && flags+=(--prerelease)
+          gh release create "v$VERSION" \
+            --title "v$VERSION" \
+            --generate-notes \
+            "${flags[@]}" \
+            dist/gmcl_buttplug_win64.dll/gmcl_buttplug_win64.dll \
+            dist/gmcl_buttplug_linux64.dll/gmcl_buttplug_linux64.dll \
+            dist/gmcl_buttplug_osx64.dll/gmcl_buttplug_osx64.dll

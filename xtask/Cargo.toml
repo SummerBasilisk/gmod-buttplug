@@ -1,0 +1,12 @@
+[package]
+name = "xtask"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+# xtask is an in-repo build tool — it shells out to `cargo build` for the real
+# crate and then renames/copies the resulting cdylib into GMod's expected
+# `gmcl_buttplug_<platform>.dll` naming. Run it as `cargo xtask build [--target
+# <triple>]`; the alias is defined in `.cargo/config.toml`.
+
+[dependencies]

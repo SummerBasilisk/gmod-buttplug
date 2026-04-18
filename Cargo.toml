@@ -7,6 +7,9 @@ license = "BSD-3-Clause"
 authors = ["SummerBasilisk"]
 repository = "https://github.com/SummerBasilisk/gmod-buttplug"
 
+[workspace]
+members = ["xtask"]
+
 [lib]
 name = "gmcl_buttplug"
 crate-type = ["cdylib"]
@@ -33,6 +36,12 @@ buttplug_server_hwmgr_serial = "10"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
 futures = "0.3"
 crossbeam-channel = "0.5"
+
+# Tiny blocking HTTP client for the on-load GitHub-release version check.
+# Pulls in rustls via default features (already in the dep graph via buttplug).
+# Pair it with serde_json for the `{"tag_name": "..."}` field extraction.
+ureq = { version = "2", features = ["json"] }
+serde_json = "1"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 buttplug_server_hwmgr_xinput = "10"

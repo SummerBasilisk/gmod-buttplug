@@ -13,6 +13,7 @@ use tokio::runtime::Runtime;
 mod api;
 mod device;
 mod events;
+mod update_check;
 
 // ---------------------------------------------------------------------------
 // Lifecycle states
@@ -96,6 +97,12 @@ unsafe fn gmod13_open(lua: gmod::lua::State) -> i32 {
 		", buttplug-rs 10.x embedded)"
 	));
 	lua.call(1, 0);
+
+	// Non-blocking check against the GitHub Releases API. Runs in a detached
+	// thread so a slow/offline network never delays module load; the notice
+	// (if any) lands in the gmod console via the override_stdout pipe set up
+	// above.
+	update_check::spawn();
 
 	0
 }
