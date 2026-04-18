@@ -68,6 +68,11 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Install sccache
+        # sccache-action v0.0.9 is the latest release and still runs on Node 20.
+        # Opt into the Node 24 runtime early to clear the deprecation warning;
+        # drop this env block once mozilla-actions ships a Node 24 release.
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
         uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Cargo cache
