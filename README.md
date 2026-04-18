@@ -17,7 +17,7 @@ This project was mostly vibecoded with [Claude Code](https://claude.com/claude-c
 
 ## 📦 Players: How to Install
 
-Grab the DLL from the **[Latest Release](/releases)** matching your platform:
+Grab the DLL from the **[Latest Release](https://github.com/SummerBasilisk/gmod-buttplug/releases)** matching your platform:
 
 | Platform | Filename |
 |---|---|
@@ -31,7 +31,7 @@ Drop it into `garrysmod/lua/bin/` (create the directory if it doesn't exist) and
 
 Currently client-only. A serverside variant (`gmsv_`) may come later.
 
-On module load, gmod-buttplug pings the GitHub Releases API in the background and prints a one-line notice to the console if a newer version is available.
+**Note:** On module load, gmod-buttplug pings the GitHub Releases API in the background and prints a one-line notice to the console if a newer version is available.
 
 ## 👩‍💻 Developers: How to Use
 
