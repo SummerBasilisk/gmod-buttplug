@@ -28,7 +28,7 @@ jobs:
     outputs:
       version: ${{ steps.v.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0  # need full history to check existing tags
 
@@ -55,6 +55,10 @@ jobs:
     needs: prepare
     name: ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "0"
     strategy:
       fail-fast: true
       matrix:
@@ -72,7 +76,7 @@ jobs:
             target: x86_64-apple-darwin
             final: gmcl_buttplug_osx64.dll
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
@@ -85,16 +89,23 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
       - name: Cargo cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2.9.1
         with:
+          # Separate cache key from the Build workflow — release builds are
+          # infrequent but always run from main, so it's safe to let them
+          # write their own cache.
           key: release-${{ matrix.target }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Build (release)
         run: cargo xtask build --target ${{ matrix.target }}
 
       - name: Upload binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.final }}
           path: target/${{ matrix.target }}/release/${{ matrix.final }}
@@ -107,13 +118,13 @@ jobs:
     permissions:
       contents: write  # required for creating tags and releases
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ github.token }}
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist
 

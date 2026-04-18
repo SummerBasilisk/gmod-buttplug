@@ -3,13 +3,39 @@ name: Build
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - 'examples/**'
+      - '.gitignore'
   pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - 'examples/**'
+      - '.gitignore'
   workflow_dispatch:
+
+# Cancel older in-flight runs on the same ref — no point burning minutes
+# on a commit that's already been superseded.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     name: ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
+    env:
+      # sccache caches individual rustc invocations via the GitHub Actions
+      # cache backend. Stacks on top of Swatinem/rust-cache (which caches the
+      # whole target/ dir) — together they dramatically cut cold-build time.
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+      # Disable incremental compilation in CI — it bloats the cache and
+      # sccache gives us better reuse across runs anyway. (This is also
+      # what Swatinem/rust-cache recommends.)
+      CARGO_INCREMENTAL: "0"
     strategy:
       fail-fast: false
       matrix:
@@ -28,7 +54,7 @@ jobs:
             final: gmcl_buttplug_osx64.dll
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
@@ -41,10 +67,18 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - name: Install sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
       - name: Cargo cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2.9.1
         with:
           key: ${{ matrix.target }}
+          # Only write the cache from main — PR/feature-branch builds still
+          # read the main cache but don't churn it with their own entries.
+          # GitHub's 10GB per-repo quota evicts LRU, so keeping writes
+          # centralized makes the cache much more effective.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Build (release)
         # `cargo xtask build` compiles the cdylib AND writes the GMod-named
@@ -52,7 +86,7 @@ jobs:
         run: cargo xtask build --target ${{ matrix.target }}
 
       - name: Upload binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.final }}
           path: target/${{ matrix.target }}/release/${{ matrix.final }}
