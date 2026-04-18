@@ -27,14 +27,9 @@ jobs:
     name: ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
     env:
-      # sccache caches individual rustc invocations via the GitHub Actions
-      # cache backend. Stacks on top of Swatinem/rust-cache (which caches the
-      # whole target/ dir) — together they dramatically cut cold-build time.
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
       # Disable incremental compilation in CI — it bloats the cache and
-      # sccache gives us better reuse across runs anyway. (This is also
-      # what Swatinem/rust-cache recommends.)
+      # doesn't help when Swatinem/rust-cache is restoring a warm target/
+      # tree (the recommended setting from rust-cache's README).
       CARGO_INCREMENTAL: "0"
     strategy:
       fail-fast: false
@@ -66,14 +61,6 @@ jobs:
         uses: dtolnay/rust-toolchain@nightly
         with:
           targets: ${{ matrix.target }}
-
-      - name: Install sccache
-        # sccache-action v0.0.9 is the latest release and still runs on Node 20.
-        # Opt into the Node 24 runtime early to clear the deprecation warning;
-        # drop this env block once mozilla-actions ships a Node 24 release.
-        env:
-          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2.9.1
