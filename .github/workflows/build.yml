@@ -23,7 +23,7 @@ jobs:
             target: x86_64-unknown-linux-gnu
             final: gmcl_buttplug_linux64.dll
           - label: macos-x86_64
-            os: macos-13  # Intel runner — matches GMod's x86_64 macOS build
+            os: macos-15-intel  # Intel runner — matches GMod's x86_64 macOS build
             target: x86_64-apple-darwin
             final: gmcl_buttplug_osx64.dll
 
