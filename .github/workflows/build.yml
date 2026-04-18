@@ -39,10 +39,18 @@ jobs:
             os: windows-latest
             target: x86_64-pc-windows-msvc
             final: gmcl_buttplug_win64.dll
+          - label: windows-x86
+            os: windows-latest
+            target: i686-pc-windows-msvc
+            final: gmcl_buttplug_win32.dll
           - label: linux-x86_64
             os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             final: gmcl_buttplug_linux64.dll
+          - label: linux-x86
+            os: ubuntu-latest
+            target: i686-unknown-linux-gnu
+            final: gmcl_buttplug_linux.dll
           - label: macos-x86_64
             os: macos-15-intel  # Intel runner — matches GMod's x86_64 macOS build
             target: x86_64-apple-darwin
@@ -53,9 +61,21 @@ jobs:
 
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
+        # i686 cross-compile on an x86_64 Ubuntu runner needs multilib and
+        # the i386 variants of the dev libs. We also whitelist cross-arch
+        # queries in pkg-config and point it at the i386 .pc files, so the
+        # btleplug/serialport build scripts find dbus and udev.
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libdbus-1-dev libudev-dev pkg-config
+          if [ "${{ matrix.target }}" = "i686-unknown-linux-gnu" ]; then
+            sudo dpkg --add-architecture i386
+            sudo apt-get update
+            sudo apt-get install -y gcc-multilib libdbus-1-dev:i386 libudev-dev:i386 pkg-config
+            echo "PKG_CONFIG_ALLOW_CROSS=1" >> "$GITHUB_ENV"
+            echo "PKG_CONFIG_PATH=/usr/lib/i386-linux-gnu/pkgconfig" >> "$GITHUB_ENV"
+          else
+            sudo apt-get update
+            sudo apt-get install -y libdbus-1-dev libudev-dev pkg-config
+          fi
 
       - name: Install Rust nightly
         uses: dtolnay/rust-toolchain@nightly

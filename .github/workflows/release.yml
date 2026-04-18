@@ -1,7 +1,7 @@
 name: Release
 
 # Manually-triggered release. Reads the current version out of Cargo.toml,
-# builds all three platform artifacts via `cargo xtask build`, tags the repo
+# builds all five platform artifacts via `cargo xtask build`, tags the repo
 # with `vX.Y.Z`, and attaches the renamed DLLs to a GitHub Release.
 #
 # Workflow:
@@ -65,10 +65,18 @@ jobs:
             os: windows-latest
             target: x86_64-pc-windows-msvc
             final: gmcl_buttplug_win64.dll
+          - label: windows-x86
+            os: windows-latest
+            target: i686-pc-windows-msvc
+            final: gmcl_buttplug_win32.dll
           - label: linux-x86_64
             os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             final: gmcl_buttplug_linux64.dll
+          - label: linux-x86
+            os: ubuntu-latest
+            target: i686-unknown-linux-gnu
+            final: gmcl_buttplug_linux.dll
           - label: macos-x86_64
             os: macos-15-intel  # Intel runner — matches GMod's x86_64 macOS build
             target: x86_64-apple-darwin
@@ -78,9 +86,18 @@ jobs:
 
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
+        # See build.yml for the rationale on the i686 multilib branch.
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libdbus-1-dev libudev-dev pkg-config
+          if [ "${{ matrix.target }}" = "i686-unknown-linux-gnu" ]; then
+            sudo dpkg --add-architecture i386
+            sudo apt-get update
+            sudo apt-get install -y gcc-multilib libdbus-1-dev:i386 libudev-dev:i386 pkg-config
+            echo "PKG_CONFIG_ALLOW_CROSS=1" >> "$GITHUB_ENV"
+            echo "PKG_CONFIG_PATH=/usr/lib/i386-linux-gnu/pkgconfig" >> "$GITHUB_ENV"
+          else
+            sudo apt-get update
+            sudo apt-get install -y libdbus-1-dev libudev-dev pkg-config
+          fi
 
       - name: Install Rust nightly
         uses: dtolnay/rust-toolchain@nightly
@@ -147,5 +164,7 @@ jobs:
             --generate-notes \
             "${flags[@]}" \
             dist/gmcl_buttplug_win64.dll/gmcl_buttplug_win64.dll \
+            dist/gmcl_buttplug_win32.dll/gmcl_buttplug_win32.dll \
             dist/gmcl_buttplug_linux64.dll/gmcl_buttplug_linux64.dll \
+            dist/gmcl_buttplug_linux.dll/gmcl_buttplug_linux.dll \
             dist/gmcl_buttplug_osx64.dll/gmcl_buttplug_osx64.dll
