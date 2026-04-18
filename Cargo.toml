@@ -3,6 +3,9 @@ name = "gmod-buttplug"
 version = "0.2.0"
 edition = "2021"
 publish = false
+license = "BSD-3-Clause"
+authors = ["SummerBasilisk"]
+repository = "https://github.com/SummerBasilisk/gmod-buttplug"
 
 [lib]
 name = "gmcl_buttplug"

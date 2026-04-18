@@ -2,9 +2,9 @@
 
 A Garry's Mod binary module that embeds [buttplug-rs](https://github.com/buttplugio/buttplug) directly into the gmod process, exposing intimate-hardware control to Lua.
 
-**Embeds buttplug-rs directly — no Intiface Engine required.** Unlike the typical buttplug workflow, players do not need to run Intiface Central or Intiface Engine alongside the game. Device discovery, connection management, and command dispatch all happen inside the gmod process.
+**Embeds buttplug-rs directly — no Intiface Engine required.** Unlike the typical buttplug workflow, players do not need to run [Intiface Central](https://intiface.com/central/) or [Intiface Engine](https://github.com/intiface/intiface-engine) alongside the game. Device discovery, connection management, and command dispatch all happen inside the gmod process.
 
-Supports every hardware manager buttplug-rs ships with: BLE (btleplug), HID, Serial, Lovense Connect service, Lovense HID dongle, and — on Windows — XInput.
+Supports every hardware manager buttplug-rs ships with: BLE (via [btleplug](https://github.com/deviceplug/btleplug)), HID, Serial, Lovense Connect service, Lovense HID dongle, and — on Windows — XInput.
 
 ---
 
@@ -26,7 +26,7 @@ Currently client-only. A serverside variant (`gmsv_`) may come later.
 
 ## Build
 
-Requires Rust nightly (transitive dependency of gmod-rs's gmcl feature). The `rust-toolchain.toml` in this repo pins nightly automatically.
+Requires Rust nightly (transitive dependency of [gmod-rs](https://github.com/WilliamVenner/gmod-rs)'s `gmcl` feature). The `rust-toolchain.toml` in this repo pins nightly automatically.
 
 ### Windows x86_64
 
@@ -122,6 +122,10 @@ Speeds and positions use the Percent convention (`0..1` floats), matching buttpl
 
 See [`examples/autorun.lua`](examples/autorun.lua) for a minimal demo — hook listeners, console commands, and a damage-reactive vibrate.
 
+## Disclaimer
+
+This project was mostly vibecoded with [Claude Code](https://claude.com/claude-code). A human drove the design decisions, reviewed the diffs, and ran the builds, but the bulk of the Rust and Lua was drafted by the model. Treat it accordingly: the code works and has been smoke-tested, but if something looks suspicious, trust your eyes — raise an issue or a PR.
+
 ## License
 
-BSD-3-Clause, matching buttplug-rs.
+BSD-3-Clause, matching buttplug-rs. See [`LICENSE`](LICENSE) for the full text — gmod-buttplug's own copyright and buttplug-rs's upstream copyright are both reproduced there, since distributed binaries statically link buttplug-rs.
