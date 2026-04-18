@@ -1,0 +1,66 @@
+name: Build
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: windows-x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: gmcl_buttplug.dll
+            final: gmcl_buttplug_win64.dll
+          - label: linux-x86_64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: libgmcl_buttplug.so
+            final: gmcl_buttplug_linux64.dll
+          - label: macos-x86_64
+            os: macos-13  # Intel runner — matches GMod's x86_64 macOS build
+            target: x86_64-apple-darwin
+            artifact: libgmcl_buttplug.dylib
+            final: gmcl_buttplug_osx64.dll
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev libudev-dev pkg-config
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build (release)
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Rename artifact to GMod naming convention
+        shell: bash
+        run: |
+          cd target/${{ matrix.target }}/release
+          cp "${{ matrix.artifact }}" "${{ matrix.final }}"
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.final }}
+          path: target/${{ matrix.target }}/release/${{ matrix.final }}
+          if-no-files-found: error

@@ -1,0 +1,41 @@
+[package]
+name = "gmod-buttplug"
+version = "0.2.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "gmcl_buttplug"
+crate-type = ["cdylib"]
+
+[dependencies]
+gmod = { version = "17", default-features = false, features = ["gmcl"] }
+
+# Buttplug v10 is split across workspace crates. `buttplug_client_in_process`'s
+# default features pull in every hardware manager we list below — exactly what
+# we want: btleplug, xinput (Windows), hid, serial, lovense dongle, lovense
+# connect service. We still need to name each subcrate explicitly so our source
+# can `use` their public types.
+buttplug_client = "10"
+buttplug_client_in_process = "10"
+buttplug_core = "10"
+buttplug_server = "10"
+buttplug_server_device_config = "10"
+buttplug_server_hwmgr_btleplug = "10"
+buttplug_server_hwmgr_hid = "10"
+buttplug_server_hwmgr_lovense_connect = "10"
+buttplug_server_hwmgr_lovense_dongle = "10"
+buttplug_server_hwmgr_serial = "10"
+
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
+futures = "0.3"
+crossbeam-channel = "0.5"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+buttplug_server_hwmgr_xinput = "10"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

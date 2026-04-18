@@ -1,0 +1,127 @@
+# gmod-buttplug
+
+A Garry's Mod binary module that embeds [buttplug-rs](https://github.com/buttplugio/buttplug) directly into the gmod process, exposing intimate-hardware control to Lua.
+
+**Embeds buttplug-rs directly — no Intiface Engine required.** Unlike the typical buttplug workflow, players do not need to run Intiface Central or Intiface Engine alongside the game. Device discovery, connection management, and command dispatch all happen inside the gmod process.
+
+Supports every hardware manager buttplug-rs ships with: BLE (btleplug), HID, Serial, Lovense Connect service, Lovense HID dongle, and — on Windows — XInput.
+
+---
+
+## Install
+
+GMod binary modules use the same `.dll` extension on every platform, but the filename must match your OS and your GMod branch (`x86-64` beta vs. the 32-bit main branch). Rename the artifact accordingly:
+
+| Platform | Build output | Final filename |
+|---|---|---|
+| Windows x86_64 (x86-64 beta) | `gmcl_buttplug.dll` | `gmcl_buttplug_win64.dll` |
+| Windows x86 (main branch) | `gmcl_buttplug.dll` | `gmcl_buttplug_win32.dll` |
+| Linux x86_64 (x86-64 beta) | `libgmcl_buttplug.so` | `gmcl_buttplug_linux64.dll` |
+| Linux x86 (main branch) | `libgmcl_buttplug.so` | `gmcl_buttplug_linux.dll` |
+| macOS x86_64 (x86-64 beta) | `libgmcl_buttplug.dylib` | `gmcl_buttplug_osx64.dll` |
+
+Then drop the renamed file into `garrysmod/lua/bin/` (create the directory if it doesn't exist) and `require("buttplug")` from any clientside Lua file.
+
+Currently client-only. A serverside variant (`gmsv_`) may come later.
+
+## Build
+
+Requires Rust nightly (transitive dependency of gmod-rs's gmcl feature). The `rust-toolchain.toml` in this repo pins nightly automatically.
+
+### Windows x86_64
+
+```sh
+cargo build --release --target x86_64-pc-windows-msvc
+```
+
+Output: `target/x86_64-pc-windows-msvc/release/gmcl_buttplug.dll`.
+
+### Linux x86_64
+
+System dependencies (Debian/Ubuntu):
+
+```sh
+sudo apt-get install libdbus-1-dev libudev-dev pkg-config
+```
+
+`libdbus-1-dev` is needed by btleplug (BLE via BlueZ), `libudev-dev` by the serial-port backend.
+
+```sh
+rustup target add x86_64-unknown-linux-gnu
+cargo build --release --target x86_64-unknown-linux-gnu
+```
+
+Output: `target/x86_64-unknown-linux-gnu/release/libgmcl_buttplug.so`.
+
+### macOS x86_64
+
+GMod's macOS build is Intel-only; even on Apple Silicon, build for `x86_64-apple-darwin` so the artifact loads under Rosetta. No extra system deps — everything links against system frameworks (CoreBluetooth, IOKit) bundled with Xcode CLT.
+
+```sh
+rustup target add x86_64-apple-darwin
+cargo build --release --target x86_64-apple-darwin
+```
+
+Output: `target/x86_64-apple-darwin/release/libgmcl_buttplug.dylib`.
+
+### Prebuilt binaries
+
+Every push to `main` produces artifacts for all three platforms via [GitHub Actions](.github/workflows/build.yml). Grab the matching artifact from the latest run and rename per the Install table.
+
+## Platform notes
+
+**Windows.** BLE works out of the box via WinRT. XInput is compiled in (Xbox-style controllers). No additional services required.
+
+**Linux.** Requires `bluez` running (`systemctl status bluetooth`). Unprivileged users may need to be in the `bluetooth` group to scan. Also requires D-Bus to be running (effectively always true on desktop distros).
+
+**macOS.** GMod itself doesn't ship with a Bluetooth usage-description entitlement, so modern macOS (Catalina+) will silently deny BLE access to the GMod process. Non-BLE managers (HID, serial, Lovense Connect) still work. This is a GMod limitation, not a limitation of this module.
+
+## Lua API
+
+All calls are fire-and-forget. Lifecycle progress and errors arrive as `hook.Run("Buttplug<Name>", ...)` — never via return values.
+
+### Global `buttplug.*`
+
+| Function | Description |
+|---|---|
+| `buttplug.Start()` | Spins up the in-process buttplug server and client. Returns `true` if a new session started, `false` if one is already running or in transition. `ButtplugReady` fires once the client is live; `ButtplugStartFailed(err)` fires if setup throws. |
+| `buttplug.Stop()` | Gracefully disconnects. `ButtplugStopped` fires once the session is fully torn down. |
+| `buttplug.IsRunning()` | Returns `true` while a session is live. |
+| `buttplug.StartScanning()` | Begins device discovery. Scanning is always explicit — `Start()` does not auto-scan. |
+| `buttplug.StopScanning()` | Halts discovery. |
+| `buttplug.Devices()` | Returns an array of `Device` userdata for every currently-connected device. |
+| `buttplug.StopAll()` | Panic button — stops every connected device. |
+
+### Device userdata
+
+| Method | Description |
+|---|---|
+| `dev:Index()` | Stable device index (integer). |
+| `dev:Name()` | Human-readable device name. |
+| `dev:Vibrate(speed)` | Vibrate at `speed` in `0..1`. |
+| `dev:Rotate(speed)` | Rotate at `speed` in `0..1`. |
+| `dev:Linear(pos, ms)` | Move to absolute position `pos` in `0..1` over `ms` milliseconds. |
+| `dev:Stop()` | Stop this device. |
+| `tostring(dev)` | `buttplug.Device[<index>: <name>]`. |
+
+Speeds and positions use the Percent convention (`0..1` floats), matching buttplug itself.
+
+### Hooks
+
+| Hook | Args | Fires when |
+|---|---|---|
+| `ButtplugReady` | — | Session is live and ready for scanning / commands. |
+| `ButtplugStartFailed` | `err: string` | `Start()` succeeded but the async setup failed. |
+| `ButtplugStopped` | — | Session has fully torn down. |
+| `ButtplugScanFinished` | — | Scanning completed (via timeout or `StopScanning()`). |
+| `ButtplugDeviceAdded` | `dev: Device` | A new device connected. |
+| `ButtplugDeviceRemoved` | `dev: Device` | A device disconnected. |
+| `ButtplugError` | `err: string` | The client surfaced an error. |
+
+## Example
+
+See [`examples/autorun.lua`](examples/autorun.lua) for a minimal demo — hook listeners, console commands, and a damage-reactive vibrate.
+
+## License
+
+BSD-3-Clause, matching buttplug-rs.
