@@ -54,7 +54,7 @@ jobs:
             final: gmcl_buttplug_osx64.dll
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.2
 
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
@@ -91,7 +91,7 @@ jobs:
         run: cargo xtask build --target ${{ matrix.target }}
 
       - name: Upload binary
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: ${{ matrix.final }}
           path: target/${{ matrix.target }}/release/${{ matrix.final }}

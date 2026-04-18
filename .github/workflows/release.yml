@@ -28,7 +28,7 @@ jobs:
     outputs:
       version: ${{ steps.v.outputs.version }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.2
         with:
           fetch-depth: 0  # need full history to check existing tags
 
@@ -76,7 +76,7 @@ jobs:
             target: x86_64-apple-darwin
             final: gmcl_buttplug_osx64.dll
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.2
 
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
@@ -110,7 +110,7 @@ jobs:
         run: cargo xtask build --target ${{ matrix.target }}
 
       - name: Upload binary
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: ${{ matrix.final }}
           path: target/${{ matrix.target }}/release/${{ matrix.final }}
@@ -123,13 +123,13 @@ jobs:
     permissions:
       contents: write  # required for creating tags and releases
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.2
         with:
           fetch-depth: 0
           token: ${{ github.token }}
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v8.0.1
         with:
           path: dist
 
