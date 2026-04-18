@@ -16,8 +16,8 @@ Target triple → artifact filename (see `xtask/src/main.rs:platform_names`):
 
 | Triple | Artifact |
 |---|---|
-| `x86_64-pc-windows-msvc` | `gmcl_buttplug_win64.dll` |
-| `i686-pc-windows-msvc` | `gmcl_buttplug_win32.dll` |
+| `x86_64-pc-windows-msvc` | `gmcl_buttplug_win64.dll` (needs NASM on PATH) |
+| `i686-pc-windows-msvc` | `gmcl_buttplug_win32.dll` (needs NASM on PATH) |
 | `x86_64-unknown-linux-gnu` | `gmcl_buttplug_linux64.dll` |
 | `i686-unknown-linux-gnu` | `gmcl_buttplug_linux.dll` (needs `gcc-multilib` + `:i386` libs) |
 | `x86_64-apple-darwin` | `gmcl_buttplug_osx64.dll` (GMod is Intel-only on macOS) |
@@ -54,13 +54,11 @@ Speeds and positions are `0..1` floats (Percent convention). Module does not cla
 
 Release flow for the human: bump `version = "X.Y.Z"` in Cargo.toml → push to main → run Release workflow from the Actions tab → review draft → publish.
 
-## Vendored Lovense Connect crate
+## NASM on Windows
 
-`vendor/buttplug_server_hwmgr_lovense_connect/` is a verbatim copy of upstream 10.0.2 with exactly one patch: reqwest's `rustls` feature is swapped for `rustls-no-provider`. It's wired in via `[patch.crates-io]` in the root `Cargo.toml`.
+Windows builds need [NASM](https://www.nasm.us/) on `PATH`. `aws-lc-sys` (pulled in via `rustls-platform-verifier` → reqwest → `buttplug_server_hwmgr_lovense_connect`) uses NASM-assembled primitives on Windows. `winget install --id NASM.NASM` covers local dev; GitHub Actions' `windows-latest` runner has NASM preinstalled, so CI needs nothing extra.
 
-Why this exists: upstream 10.0.2 enables both rustls's `ring` provider (on its direct rustls dep) AND reqwest's `rustls` feature (which pulls in `aws-lc-rs`). The result was two crypto providers compiled into every build — wasted build time / binary size, and NASM became a Windows i686 build requirement. The vendored patch drops reqwest to `rustls-no-provider`; the top-level crate declares a direct `rustls = { features = ["ring"] }` dep and calls `rustls::crypto::ring::default_provider().install_default()` from `gmod13_open` before any reqwest Client is built. One crypto stack, no NASM.
-
-Maintenance: when upstream publishes a new `buttplug_server_hwmgr_lovense_connect`, bump the `version` in the vendored `Cargo.toml` to match, refresh `src/` from crates.io, and re-apply the single feature-list tweak. If upstream ever fixes this themselves, drop the vendor tree and the `[patch.crates-io]` entry.
+Worth knowing: the rustls dep graph is a bit wasteful — both `ring` (via `ureq` for the update check) and `aws-lc-rs` (via reqwest for Lovense Connect) end up compiled, because upstream `buttplug_server_hwmgr_lovense_connect` 10.0.2 turns on reqwest's `rustls` feature (which forces `aws-lc-rs`). A vendored-crate workaround to pin a single provider was tried and reverted — 500 lines of upstream code to maintain for a one-line feature-flag swap wasn't worth it. If upstream ever fixes their feature flags, the NASM requirement and the duplicate crypto provider both drop out naturally.
 
 ## Commit conventions
 
