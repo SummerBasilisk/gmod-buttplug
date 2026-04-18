@@ -85,6 +85,14 @@ unsafe fn gmod13_open(lua: gmod::lua::State) -> i32 {
 
 	set_panic_handler();
 
+	// Install ring as the process-wide rustls CryptoProvider before any code
+	// that builds a reqwest Client runs (in particular, Lovense Connect's
+	// HTTPS poll of api.lovense.com). reqwest is compiled with
+	// `rustls-no-provider` via our vendored lovense_connect patch, so it
+	// needs exactly one provider installed here. `install_default()` errors
+	// if a provider is already registered — safe to ignore on that path.
+	let _ = rustls::crypto::ring::default_provider().install_default();
+
 	// Pre-create the event channel so both producers and the drain timer share it.
 	let _ = init_event_chan();
 

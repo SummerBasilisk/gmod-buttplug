@@ -43,8 +43,25 @@ crossbeam-channel = "0.5"
 ureq = { version = "2", features = ["json"] }
 serde_json = "1"
 
+# Direct rustls dep so we can call `crypto::ring::default_provider().install_default()`
+# on module load. Without this, the vendored lovense_connect (which uses reqwest's
+# `rustls-no-provider` feature) would have no CryptoProvider and its first HTTPS
+# call would panic. `ring` is the single provider we compile in — see the
+# `[patch.crates-io]` entry below for the backstory.
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+
 [target.'cfg(target_os = "windows")'.dependencies]
 buttplug_server_hwmgr_xinput = "10"
+
+# Force a single rustls crypto provider across the tree. Upstream
+# buttplug_server_hwmgr_lovense_connect 10.0.2 enables rustls's `ring` feature
+# on its direct rustls dep but enables reqwest's `rustls` feature (which pulls
+# in `aws-lc-rs`) — so both providers ended up compiled, and aws-lc-sys forced
+# NASM on Windows i686. The vendored copy under vendor/ flips reqwest to
+# `rustls-no-provider`; the top-level `rustls` dep above ships ring, and
+# lib.rs calls `install_default()` at load time.
+[patch.crates-io]
+buttplug_server_hwmgr_lovense_connect = { path = "vendor/buttplug_server_hwmgr_lovense_connect" }
 
 [profile.release]
 lto = true
