@@ -1,7 +1,20 @@
 -- Example: put this in garrysmod/lua/autorun/client/buttplug_demo.lua
--- and drop gmcl_buttplug_win64.dll in garrysmod/lua/bin/.
+-- and drop gmcl_buttplug_<platform>.dll in garrysmod/lua/bin/.
+--
+-- If you're shipping this from a server/addon, don't forget to
+-- AddCSLuaFile() it serverside so clients actually receive the file.
 
-require("buttplug")
+if SERVER then return end
+
+-- Defensive load: the player may not have the binary module installed.
+-- We print a one-time notice pointing them at the release page and bail
+-- out cleanly, rather than (potentially) spamming errors on every frame.
+local ok = pcall(require, "buttplug")
+if not ok then
+	print("[buttplug-demo] gmod-buttplug not installed; haptics disabled. "
+		.. "Grab the DLL from https://github.com/SummerBasilisk/gmod-buttplug/releases")
+	return
+end
 
 -- How long a scan runs before auto-stopping, matching Intiface Central's default.
 local SCAN_DURATION = 30

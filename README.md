@@ -1,10 +1,11 @@
 # gmod-buttplug
 
-A Garry's Mod binary module that embeds [buttplug-rs](https://github.com/buttplugio/buttplug) directly into the gmod process, exposing intimate-hardware control to Lua.
+[Buttplug.io](https://buttplug.io) for [Garry's Mod](https://gmod.facepunch.com)! Control your *ahem* "intimate hardware", with GLua!
 
-**Embeds buttplug-rs directly — no Intiface Engine required.** Unlike the typical buttplug workflow, players do not need to run [Intiface Central](https://intiface.com/central/) or [Intiface Engine](https://github.com/intiface/intiface-engine) alongside the game. Device discovery, connection management, and command dispatch all happen inside the gmod process.
+**Embeds [buttplug-rs](https://github.com/buttplugio/buttplug) directly into a binary module — no Intiface Engine required.**
+Unlike the typical buttplug workflow, players do not need to run [Intiface Central](https://intiface.com/central/) or [Intiface Engine](https://github.com/intiface/intiface-engine) alongside the game. Device discovery, connection management, and command dispatch all happen inside the gmod process.
 
-Supports every hardware manager buttplug-rs ships with: BLE (via [btleplug](https://github.com/deviceplug/btleplug)), HID, Serial, Lovense Connect service, Lovense HID dongle, and — on Windows — XInput.
+Supports all hardware buttplug-rs ships support for: BLE (via [btleplug](https://github.com/deviceplug/btleplug)), HID, Serial, Lovense Connect service, Lovense HID dongle, and — on Windows — XInput.
 
 ---
 
@@ -12,9 +13,11 @@ Supports every hardware manager buttplug-rs ships with: BLE (via [btleplug](http
 
 This project was mostly vibecoded with [Claude Code](https://claude.com/claude-code). A human drove the design decisions, reviewed the diffs, and ran the builds, but the bulk of the Rust and Lua was drafted by the model. Treat it accordingly: the code works and has been smoke-tested, but if something looks suspicious, trust your eyes — raise an issue or a PR.
 
-## 📦 Install
+---
 
-GMod binary modules use the `.dll` extension on every platform; the suffix on the filename tells GMod which OS/branch it belongs to. Grab the file matching your platform:
+## 📦 Players: How to Install
+
+Grab the DLL from the **[Latest Release](/releases)** matching your platform:
 
 | Platform | Filename |
 |---|---|
@@ -30,7 +33,40 @@ Currently client-only. A serverside variant (`gmsv_`) may come later.
 
 On module load, gmod-buttplug pings the GitHub Releases API in the background and prints a one-line notice to the console if a newer version is available.
 
-## 🔨 Build
+## 👩‍💻 Developers: How to Use
+
+gmod-buttplug is **client-only** — the `buttplug.*` global lives on the client, and there's no serverside API to call into. Your integration is a clientside Lua file that your addon/gamemode ships to players (don't forget to `AddCSLuaFile` it serverside so it actually gets sent).
+
+[`examples/autorun.lua`](examples/autorun.lua) is the best reference — it's a real, working integration you can copy and whittle down. It covers:
+
+- The defensive `pcall(require, "buttplug")` pattern — players install the DLL themselves, so you can't assume it's present. Fall back to a one-line notice instead of spamming errors.
+- Console commands for `Start` / `Stop` / scan / panic-stop, so players have a kill switch.
+- Hook listeners for the full lifecycle (`ButtplugReady`, `ButtplugStartFailed`, `ButtplugDeviceAdded/Removed`, `ButtplugScanFinished`, `ButtplugError`, `ButtplugStopped`).
+- A gameplay-driven effect (damage → vibrate → auto-stop after 500ms).
+
+### ⚠️ ALWAYS ask for consent (don't *be* a buttplug)!
+
+This module controls intimate hardware attached to a real person. Treat it that way. A careless or sneaky integration isn't a bug — it's a violation. The bar is higher than "does my code work":
+
+- **Opt-in, always.** Never call `buttplug.Start()` without an explicit action from the player — a console command, a menu toggle, a first-run prompt they actively confirm. "The addon loaded" is not consent. Convenience is not an excuse.
+- **Make stopping trivial.** A kill switch (`buttplug.StopAll()`) must be reachable in one keybind or one command, and it must work even if your addon is mid-effect, lagging, or broken. When in doubt, default to *stopped*.
+- **Be legible.** The player should always know what your addon is doing and why a device just moved. Tie effects to clear in-game events, document them, and don't bury controls three menus deep.
+- **Respect the `Buttplug*` hooks as shared infrastructure.** They're global: another addon may be driving the same session. Don't call `buttplug.Stop()` or `buttplug.StopAll()` except in response to the player asking you to — and never hijack hook names or assume you're the only listener.
+- **Don't mess with people.** No "funny" hidden triggers, no unannounced remote control by other players. If you're tempted to surprise someone, don't.
+
+If your integration can't clear this bar, don't ship it.
+
+### Other things worth calling out
+
+The example shows these but doesn't belabor them:
+
+- **Wait for `ButtplugReady` before issuing commands.** `Start()` returns immediately; the session isn't live until the hook fires. Commands issued before then are silently dropped.
+- **All commands are fire-and-forget.** They queue on buttplug's async runtime and return immediately, so it's safe to call them from hot hooks like `Think` or `EntityTakeDamage` without worrying about blocking.
+- **Namespace your hook identifiers** (`"MyAddon.OnReady"`, not `"OnReady"`). `Buttplug*` hooks are global — every addon that listens will see every session start, not just its own.
+- **Speeds and positions are `0..1` floats.** The module doesn't clamp for you; out-of-range values are device-dependent.
+- **Don't assume one device type.** Players may have any mix of vibrators, rotators, and linear toys. Devices silently ignore commands they don't support, so it's safe to fan out a `dev:Vibrate` to everything — but meaningful effects pick the right method per device.
+
+## 🔨 Developers: How to Build
 
 Requires Rust nightly (transitive dependency of [gmod-rs](https://github.com/WilliamVenner/gmod-rs)'s `gmcl` feature). The `rust-toolchain.toml` in this repo pins nightly automatically.
 
@@ -71,12 +107,6 @@ cargo xtask build --target x86_64-apple-darwin
 ```
 
 Output: `target/x86_64-apple-darwin/release/gmcl_buttplug_osx64.dll`.
-
-### Prebuilt binaries
-
-Every push to `main` produces artifacts for all three platforms via [GitHub Actions](.github/workflows/build.yml); the filenames match the Install table above, ready to drop in.
-
-Tagged releases attach the same three artifacts to a [GitHub Release](https://github.com/SummerBasilisk/gmod-buttplug/releases) — the recommended download source for end users.
 
 ## 🖥️ Platform notes
 
