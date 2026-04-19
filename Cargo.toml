@@ -37,6 +37,13 @@ tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"
 futures = "0.3"
 crossbeam-channel = "0.5"
 
+# tracing subscriber for runtime-togglable debug output. buttplug/btleplug both
+# log via `tracing`; without a subscriber those events are silently dropped.
+# Default filter is quiet (`warn`); `buttplug.SetLogFilter("debug")` from Lua
+# flips on verbose output live for on-the-fly diagnosis.
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
 # Tiny blocking HTTP client for the on-load GitHub-release version check.
 # Pulls in rustls via default features (already in the dep graph via buttplug).
 # Pair it with serde_json for the `{"tag_name": "..."}` field extraction.

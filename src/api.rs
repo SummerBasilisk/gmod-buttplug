@@ -12,13 +12,14 @@ pub(crate) unsafe fn register(lua: gmod::lua::State) {
 
 	lua.new_table();
 
-	lua.push_function(start);          lua.set_field(-2, lua_string!("Start"));
-	lua.push_function(stop);           lua.set_field(-2, lua_string!("Stop"));
-	lua.push_function(start_scanning); lua.set_field(-2, lua_string!("StartScanning"));
-	lua.push_function(stop_scanning);  lua.set_field(-2, lua_string!("StopScanning"));
-	lua.push_function(stop_all);       lua.set_field(-2, lua_string!("StopAll"));
-	lua.push_function(devices);        lua.set_field(-2, lua_string!("Devices"));
-	lua.push_function(is_running);     lua.set_field(-2, lua_string!("IsRunning"));
+	lua.push_function(start);           lua.set_field(-2, lua_string!("Start"));
+	lua.push_function(stop);            lua.set_field(-2, lua_string!("Stop"));
+	lua.push_function(start_scanning);  lua.set_field(-2, lua_string!("StartScanning"));
+	lua.push_function(stop_scanning);   lua.set_field(-2, lua_string!("StopScanning"));
+	lua.push_function(stop_all);        lua.set_field(-2, lua_string!("StopAll"));
+	lua.push_function(devices);         lua.set_field(-2, lua_string!("Devices"));
+	lua.push_function(is_running);      lua.set_field(-2, lua_string!("IsRunning"));
+	lua.push_function(set_log_filter);  lua.set_field(-2, lua_string!("SetLogFilter"));
 
 	lua.set_global(lua_string!("buttplug"));
 }
@@ -93,6 +94,25 @@ unsafe extern "C-unwind" fn devices(lua: gmod::lua::State) -> i32 {
 
 unsafe extern "C-unwind" fn is_running(lua: gmod::lua::State) -> i32 {
 	lua.push_boolean(STATE.load(Ordering::Acquire) == STATE_RUNNING);
+	1
+}
+
+/// Applies a `tracing` `EnvFilter` spec (e.g. `"debug"`, `"btleplug=trace"`)
+/// to the live subscriber. Returns `true` on success, `false` with an error
+/// pushed to stderr on parse failure. Called rarely (diagnostics), so bailing
+/// via a console print is fine — no hook fires.
+unsafe extern "C-unwind" fn set_log_filter(lua: gmod::lua::State) -> i32 {
+	let spec = match lua.get_string(1) {
+		Some(s) => s.to_string(),
+		None    => { lua.push_boolean(false); return 1; }
+	};
+	match crate::logging::set_filter(&spec) {
+		Ok(())  => lua.push_boolean(true),
+		Err(e)  => {
+			eprintln!("[gmod-buttplug] SetLogFilter failed: {e}");
+			lua.push_boolean(false);
+		}
+	}
 	1
 }
 

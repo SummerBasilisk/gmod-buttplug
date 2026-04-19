@@ -131,6 +131,7 @@ All calls are fire-and-forget. Lifecycle progress and errors arrive as `hook.Run
 | `buttplug.StopScanning()` | Halts discovery. |
 | `buttplug.Devices()` | Returns an array of `Device` userdata for every currently-connected device. |
 | `buttplug.StopAll()` | Panic button — stops every connected device. |
+| `buttplug.SetLogFilter(spec)` | Changes the tracing-subscriber filter at runtime for buttplug / btleplug diagnostics. Accepts any [`EnvFilter`](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html) spec (`"debug"`, `"btleplug=trace,buttplug=debug"`, `"warn"` to quiet). Returns `true` on success, `false` with a console message on parse failure. |
 
 ### Device userdata
 
@@ -161,6 +162,16 @@ Speeds and positions use the Percent convention (`0..1` floats), matching buttpl
 ## 💡 Example
 
 See [`examples/buttplug_demo.lua`](examples/buttplug_demo.lua) for a minimal demo — hook listeners, console commands, and a damage-reactive vibrate.
+
+## 🐛 Diagnosing connection issues
+
+If a device isn't being discovered, flip the log filter on from the gmod console:
+
+```
+buttplug_log debug
+```
+
+(That's the `buttplug_log` concommand from the demo; it wraps `buttplug.SetLogFilter`.) Then retry your scan — you should see `btleplug`/`buttplug` events describing what the server is seeing. Scrollback usually isn't enough to read it all; add `-condebug` to GMod's launch options and everything mirrors to `garrysmod/console.log`. Run `buttplug_log warn` to quiet things back down.
 
 ## ⚖️ License
 

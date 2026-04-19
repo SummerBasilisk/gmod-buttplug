@@ -29,10 +29,17 @@ Rust **nightly** is pinned via `rust-toolchain.toml` — required by gmod-rs's `
 - `src/lib.rs` — entry points (`gmod13_open` / `gmod13_close`), state machine (STOPPED/STARTING/RUNNING/STOPPING atomic), tokio runtime + ButtplugClient globals, panic handler
 - `src/api.rs` — Lua-facing `buttplug.*` global. All functions are fire-and-forget; no return values carry lifecycle state
 - `src/device.rs` — Device userdata metatable (`dev:Vibrate`, `:Rotate`, `:Linear`, `:Stop`, etc.)
-- `src/events.rs` — async session driver + crossbeam channel piping `LuaEvent`s to a main-thread timer that fires `hook.Run("Buttplug<Name>", ...)`
+- `src/events.rs` — async session driver + crossbeam channel piping `LuaEvent`s to a main-thread `PreRender` hook that fires `hook.Run("Buttplug<Name>", ...)`. `PreRender` is deliberate: `Think` and zero-delay timers both pause during the singleplayer pause menu; `HUDPaint` can be suppressed (`cl_drawhud 0`, gamemode hooks). `PreRender` fires unconditionally per render frame
+- `src/logging.rs` — tracing subscriber wired to tier0's spew system via `gmod::msgc::ConColorMsg` (gmod-rs exposes it as a public `lazy_static`, so we don't resolve the symbol ourselves). `println!` does NOT work from tokio worker threads: `gmod::gmcl::override_stdout` hooks stdout via `std::io::set_output_capture`, which is **thread-local**, so only the thread that called it gets the hook. Source's console is fed from tier0 spew anyway, not stdout. Writer feeds payloads as `%s` args (never as the format string — tracing output contains `%` from timestamps). `reload::Layer` lets Lua flip the filter live via `buttplug.SetLogFilter("debug")`
 - `src/update_check.rs` — detached thread pings GitHub Releases on module load, prints a one-line notice if behind. Failures silently swallowed. Has unit tests for `parse_version` / `is_newer` (prerelease suffix handling matters)
 - `xtask/src/main.rs` — build helper; only two commands: `build` and (implicit) help
 - `examples/buttplug_demo.lua` — canonical integration reference. Opens with defensive `pcall(require, "buttplug")`. Addon authors should copy from this file
+
+## Gotchas worth remembering
+
+- **`DeviceConfigurationManagerBuilder::default()` is empty.** Zero protocols, zero specifiers — every discovered device falls through with "No viable protocols for hardware ... ignoring", nothing will ever match. Always go through `buttplug_server_device_config::load_protocol_configs(&None, &None, false)` to get a builder pre-populated from the bundled `buttplug-device-config-v4.json`. See `src/events.rs::build_client`. Easy to miss because the builder-default pattern in Rust usually gives a working-but-minimal instance, not an empty shell.
+- **Damage hooks are server-realm.** `EntityTakeDamage` never fires in a client-only module — not even in singleplayer, hooks are realm-scoped. The demo listens for `player_hurt` via `gameevent.Listen` instead. Trade-off: clientside `player_hurt` doesn't carry a `CTakeDamageInfo`, only `userid` + post-damage `health`.
+- **`println!` from tokio workers goes to the void.** See the `src/logging.rs` note above. If you need log output from anywhere other than the main Lua thread, route it through the tracing subscriber (which calls tier0 spew directly) — don't reach for `println!`.
 
 ## Lua contract
 
@@ -57,7 +64,7 @@ What's covered:
 
 What's deliberately *not* covered:
 
-- The FFI surface in `api.rs` / `device.rs` / `events.rs` (timer install, hook-run helpers). These take `gmod::lua::State` and need a live GMod process. The ecosystem norm is to leave this untested at the unit level — gmod-rs itself has zero FFI unit tests.
+- The FFI surface in `api.rs` / `device.rs` / `events.rs` (hook install, hook-run helpers). These take `gmod::lua::State` and need a live GMod process. The ecosystem norm is to leave this untested at the unit level — gmod-rs itself has zero FFI unit tests.
 - The buttplug async session (`build_client`, `run_session`). Needs real hardware or a fake hwmgr stack that's not trivially available. btleplug's own tests are `#[ignore]` and require a physical BLE peripheral.
 
 Pre-release smoke test is [`examples/buttplug_demo.lua`](examples/buttplug_demo.lua) in a live GMod client with a real device: load → `buttplug_start` → `buttplug_scan` → pair device → damage the player → verify vibration and auto-stop.

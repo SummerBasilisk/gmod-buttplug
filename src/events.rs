@@ -2,14 +2,17 @@
 //!
 //! The tokio task consumes `ButtplugClientEvent`s from the client's
 //! `event_stream`, converts them into [`LuaEvent`]s, and pushes them through a
-//! crossbeam channel. A zero-delay repeating `timer.Create` installed on the
-//! Lua side drains the channel every frame and fires
-//! `hook.Run("Buttplug<Name>", ...)`.
+//! crossbeam channel. A `HUDPaint` hook installed on the Lua side drains the
+//! channel every rendered frame and fires `hook.Run("Buttplug<Name>", ...)`.
 //!
-//! We use a zero-delay timer rather than a `Think` hook because `Think` is
-//! suppressed while the singleplayer pause menu is open (and while a listen
-//! server hibernates). `timer.Create(id, 0, 0, fn)` keeps firing in both
-//! cases — the same workaround used by gmod-chttp.
+//! Why `PreRender` and not `Think` or `timer.Create(..., 0, 0, ...)`: both of
+//! those pause when the singleplayer pause menu is open, which would strand
+//! device events (including disconnects) in the channel for as long as the
+//! player sits in the menu. `PreRender` fires every render frame regardless
+//! of pause state, because the engine is still drawing the menu overlay.
+//! We picked `PreRender` over the HUD hooks specifically because HUD drawing
+//! can be suppressed (`cl_drawhud 0`, gamemode `HUDShouldDraw` hooks, etc.);
+//! `PreRender` fires unconditionally whenever a frame is being drawn.
 
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -17,7 +20,7 @@ use std::sync::atomic::Ordering;
 use buttplug_client::{ButtplugClient, ButtplugClientEvent};
 use buttplug_client_in_process::ButtplugInProcessClientConnectorBuilder;
 use buttplug_server::{device::ServerDeviceManagerBuilder, ButtplugServerBuilder};
-use buttplug_server_device_config::DeviceConfigurationManagerBuilder;
+use buttplug_server_device_config::load_protocol_configs;
 use buttplug_server_hwmgr_btleplug::BtlePlugCommunicationManagerBuilder;
 use buttplug_server_hwmgr_hid::HidCommunicationManagerBuilder;
 use buttplug_server_hwmgr_lovense_connect::LovenseConnectServiceCommunicationManagerBuilder;
@@ -41,7 +44,13 @@ pub enum LuaEvent {
 
 /// Build an in-process `ButtplugClient` with every available hardware manager.
 async fn build_client() -> Result<ButtplugClient, String> {
-	let dcm = DeviceConfigurationManagerBuilder::default()
+	// `DeviceConfigurationManagerBuilder::default()` yields an EMPTY builder —
+	// no protocols, no specifiers — so every discovered device gets rejected
+	// with "No viable protocols for hardware ... ignoring". The bundled
+	// device-config JSON has to be explicitly loaded via `load_protocol_configs`,
+	// which returns a pre-populated builder.
+	let dcm = load_protocol_configs(&None, &None, false)
+		.map_err(|e| format!("load protocol configs: {e}"))?
 		.finish()
 		.map_err(|e| format!("device config manager: {e}"))?;
 
@@ -131,11 +140,11 @@ pub async fn run_session() {
 // Main-thread drain — called every frame from a zero-delay repeating timer.
 // ---------------------------------------------------------------------------
 
-/// The timer callback that drains the event channel into Lua.
+/// The drain callback invoked every frame from our `PreRender` hook.
 ///
 /// Installed when `buttplug.Start()` is called; self-removes once the session
 /// reports `Stopped` and the channel has drained.
-pub(crate) unsafe extern "C-unwind" fn timer_tick(lua: gmod::lua::State) -> i32 {
+pub(crate) unsafe extern "C-unwind" fn drain_tick(lua: gmod::lua::State) -> i32 {
 	let rx = crate::event_rx();
 	let mut drained_stopped = false;
 	while let Ok(ev) = rx.try_recv() {
@@ -182,26 +191,30 @@ unsafe fn hook_run_1_device(lua: gmod::lua::State, event: &str, index: u32, name
 	lua.pcall_ignore(2, 0);
 }
 
-const TIMER_ID: &str = "__buttplugTimer";
+const HOOK_EVENT: &str = "PreRender";
+const HOOK_ID:    &str = "__buttplugDrain";
 
-/// Installs the drain as a zero-delay, infinite-repetition `timer.Create` timer.
-/// Unlike `Think`, zero-delay timers keep firing while the singleplayer pause
-/// menu is open or the server is hibernating.
+/// Installs the drain as a `PreRender` hook. `PreRender` fires every rendered
+/// frame and — crucially — keeps firing while the singleplayer pause menu
+/// is open, because the engine is still drawing the pause overlay. A `Think`
+/// hook or a zero-delay `timer.Create` both pause in that state. We avoid
+/// `HUDPaint` here because HUD drawing can be suppressed by the user or the
+/// gamemode; `PreRender` fires unconditionally whenever a frame renders.
 pub(crate) unsafe fn install_timer(lua: gmod::lua::State) {
-	lua.get_global(lua_string!("timer"));
-	lua.get_field(-1, lua_string!("Create"));
-	lua.push_string(TIMER_ID);
-	lua.push_number(0.0); // delay — 0 = every frame
-	lua.push_number(0.0); // repetitions — 0 = infinite
-	lua.push_function(timer_tick);
-	lua.pcall_ignore(4, 0);
+	lua.get_global(lua_string!("hook"));
+	lua.get_field(-1, lua_string!("Add"));
+	lua.push_string(HOOK_EVENT);
+	lua.push_string(HOOK_ID);
+	lua.push_function(drain_tick);
+	lua.pcall_ignore(3, 0);
 	lua.pop();
 }
 
 pub(crate) unsafe fn uninstall_timer(lua: gmod::lua::State) {
-	lua.get_global(lua_string!("timer"));
+	lua.get_global(lua_string!("hook"));
 	lua.get_field(-1, lua_string!("Remove"));
-	lua.push_string(TIMER_ID);
-	lua.pcall_ignore(1, 0);
+	lua.push_string(HOOK_EVENT);
+	lua.push_string(HOOK_ID);
+	lua.pcall_ignore(2, 0);
 	lua.pop();
 }

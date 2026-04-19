@@ -13,6 +13,7 @@ use tokio::runtime::Runtime;
 mod api;
 mod device;
 mod events;
+mod logging;
 mod update_check;
 
 // ---------------------------------------------------------------------------
@@ -103,6 +104,11 @@ unsafe fn gmod13_open(lua: gmod::lua::State) -> i32 {
 
 	set_panic_handler();
 
+	// Install the tracing subscriber as early as possible so any later init
+	// messages (from btleplug / buttplug) land in the gmod console. Quiet by
+	// default; `buttplug.SetLogFilter("debug")` from Lua flips it on live.
+	logging::init();
+
 	// Pre-create the event channel so both producers and the drain timer share it.
 	let _ = init_event_chan();
 
@@ -132,6 +138,12 @@ unsafe fn gmod13_close(_lua: gmod::lua::State) -> i32 {
 	// Best-effort graceful disconnect. The runtime keeps running — we don't
 	// force-shutdown it because btleplug needs time to release WinRT handles
 	// and srcds will exit the process shortly anyway.
+	//
+	// Prints here are mostly diagnostic: they confirm whether gmod13_close
+	// fired at all. In practice it only fires on DLL unload (= process exit
+	// in gmod), not on Lua state teardown — Lua-side `ShutDown` hooks are
+	// the right place for the addon-level kill switch.
+	println!("[gmod-buttplug] gmod13_close: tearing down session");
 	if let Some(rt) = RUNTIME.get() {
 		if let Ok(mut guard) = CLIENT.write() {
 			if let Some(client) = guard.take() {
@@ -140,6 +152,7 @@ unsafe fn gmod13_close(_lua: gmod::lua::State) -> i32 {
 		}
 	}
 	STATE.store(STATE_STOPPED, std::sync::atomic::Ordering::Release);
+	println!("[gmod-buttplug] gmod13_close: teardown complete");
 	0
 }
 

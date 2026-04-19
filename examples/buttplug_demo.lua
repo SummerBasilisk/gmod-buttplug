@@ -69,13 +69,34 @@ hook.Add("ButtplugStopped", "ButtplugDemo.OnStopped", function()
 	print("[buttplug] stopped")
 end)
 
--- Pulse every connected device when the player takes damage.
-hook.Add("EntityTakeDamage", "ButtplugDemo.Pulse", function(target, dmg)
-	if target ~= LocalPlayer() then return end
+-- Safety net: when the Lua state is going away (gamemode switch, server
+-- disconnect, map change, game quit), make damn sure nothing is still
+-- vibrating. `gmod13_close` only fires on DLL unload (~= process exit), so
+-- without this hook a player who disconnects mid-session could end up with
+-- devices still running against a dead Lua state.
+hook.Add("ShutDown", "ButtplugDemo.OnShutDown", function()
 	if not buttplug.IsRunning() then return end
-	local strength = math.Clamp(dmg:GetDamage() / 50, 0.1, 1.0)
+	buttplug.StopAll()
+	buttplug.Stop()
+end)
+
+-- Pulse every connected device when the local player takes damage.
+--
+-- NOTE: `EntityTakeDamage` is server-realm only, so a client-only script
+-- never sees it — not even in singleplayer, since hooks fire per realm.
+-- `player_hurt` is a game event that fires clientside with `userid` (engine
+-- player ID) and `health` (post-damage HP), so it works here. We don't get
+-- the damage amount directly — `dmginfo` is server-only too — so we scale
+-- by a fixed intensity instead.
+gameevent.Listen("player_hurt")
+
+hook.Add("player_hurt", "ButtplugDemo.Pulse", function(data)
+	if not buttplug.IsRunning() then return end
+	local ply = LocalPlayer()
+	if not IsValid(ply) or data.userid ~= ply:UserID() then return end
+
 	for _, dev in ipairs(buttplug.Devices()) do
-		dev:Vibrate(strength)
+		dev:Vibrate(0.5)
 	end
 	timer.Simple(0.5, function()
 		if not buttplug.IsRunning() then return end
@@ -131,6 +152,18 @@ concommand.Add("buttplug_panic", function()
 	end
 	buttplug.StopAll()
 	print("[buttplug] stopped all devices")
+end)
+
+-- Diagnostics: toggle tracing output from buttplug/btleplug live.
+-- Usage: `buttplug_log debug`, `buttplug_log btleplug=trace,buttplug=debug`,
+-- `buttplug_log warn` to quiet it back down.
+concommand.Add("buttplug_log", function(_, _, args)
+	local spec = args[1] or "debug"
+	if buttplug.SetLogFilter(spec) then
+		print("[buttplug] log filter set: " .. spec)
+	else
+		print("[buttplug] bad log filter spec: " .. spec)
+	end
 end)
 
 concommand.Add("buttplug_list", function()
