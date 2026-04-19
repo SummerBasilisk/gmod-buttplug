@@ -112,7 +112,9 @@ unsafe fn gmod13_open(lua: gmod::lua::State) -> i32 {
 	lua.push_string(concat!(
 		"[gmod-buttplug] module loaded (v",
 		env!("CARGO_PKG_VERSION"),
-		", buttplug-rs 10.x embedded)"
+		", buttplug-rs v",
+		env!("BUTTPLUG_VERSION"),
+		" embedded)"
 	));
 	lua.call(1, 0);
 
