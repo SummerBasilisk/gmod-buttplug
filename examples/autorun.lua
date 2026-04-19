@@ -35,6 +35,7 @@ local function scanWithTimeout()
 	timer.Simple(SCAN_DURATION, function()
 		if not buttplug.IsRunning() then return end
 		if myToken ~= scanToken then return end -- superseded by a newer scan
+		print(string.format("[buttplug] %ds scan window elapsed, stopping", SCAN_DURATION))
 		buttplug.StopScanning()
 	end)
 end
