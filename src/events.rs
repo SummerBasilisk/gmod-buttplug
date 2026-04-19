@@ -37,7 +37,7 @@ use futures::StreamExt;
 pub enum LuaEvent {
 	Ready,
 	StartFailed(String),
-	Stopped,
+	Disconnected,
 	DeviceAdded   { index: u32, name: String },
 	DeviceRemoved { index: u32, name: String },
 	ScanFinished,
@@ -106,6 +106,25 @@ pub async fn run_session() {
 		let tx = crate::event_tx();
 		match ev {
 			ButtplugClientEvent::DeviceAdded(dev) => {
+				// Force every device to a known-zero state on connect. Some
+				// firmware (notably the Lovense Hush) caches the last
+				// commanded vibration level internally and *autonomously*
+				// resumes it on BLE reconnect — so a fresh `buttplug.Start()`
+				// after a prior vibrate would otherwise inherit a running
+				// motor with no Lua-side command behind it. Awaiting the
+				// stop before firing `ButtplugDeviceAdded` guarantees Lua
+				// hooks see the device from zero.
+				//
+				// Caveat we can't fix here: between the BLE link coming up
+				// and `DeviceAdded` firing, buttplug's Lovense identifier
+				// runs a `DeviceType;` handshake that takes a few hundred
+				// ms. The firmware restores its cached state as soon as the
+				// link is up, so the motor can visibly vibrate during that
+				// handshake window. Closing that gap requires sending a
+				// stop from inside the protocol identifier (upstream
+				// change); our DeviceAdded-time stop cleans up immediately
+				// after.
+				let _ = dev.stop().await;
 				let _ = tx.send(LuaEvent::DeviceAdded {
 					index: dev.index(),
 					name:  dev.name().clone(),
@@ -135,7 +154,7 @@ pub async fn run_session() {
 		*guard = None;
 	}
 	crate::STATE.store(crate::STATE_STOPPED, Ordering::Release);
-	let _ = crate::event_tx().send(LuaEvent::Stopped);
+	let _ = crate::event_tx().send(LuaEvent::Disconnected);
 }
 
 // ---------------------------------------------------------------------------
@@ -145,14 +164,14 @@ pub async fn run_session() {
 /// The drain callback invoked every frame from our `PreRender` hook.
 ///
 /// Installed when `buttplug.Start()` is called; self-removes once the session
-/// reports `Stopped` and the channel has drained.
+/// reports `Disconnected` and the channel has drained.
 pub(crate) unsafe extern "C-unwind" fn drain_tick(lua: gmod::lua::State) -> i32 {
 	let rx = crate::event_rx();
-	let mut drained_stopped = false;
+	let mut drained_disconnected = false;
 	while let Ok(ev) = rx.try_recv() {
 		match ev {
 			LuaEvent::Ready                         => hook_run_0(lua, "ButtplugReady"),
-			LuaEvent::Stopped                       => { hook_run_0(lua, "ButtplugStopped"); drained_stopped = true; }
+			LuaEvent::Disconnected                  => { hook_run_0(lua, "ButtplugDisconnected"); drained_disconnected = true; }
 			LuaEvent::ScanFinished                  => hook_run_0(lua, "ButtplugScanFinished"),
 			LuaEvent::StartFailed(msg)              => hook_run_1_str(lua, "ButtplugStartFailed", &msg),
 			LuaEvent::Error(msg)                    => hook_run_1_str(lua, "ButtplugError", &msg),
@@ -161,12 +180,12 @@ pub(crate) unsafe extern "C-unwind" fn drain_tick(lua: gmod::lua::State) -> i32 
 		}
 	}
 
-	// Only uninstall if STATE is still STOPPED. The `ButtplugStopped` handler
-	// may have synchronously called `buttplug.Start()`, which reinstalled the
-	// hook and moved STATE to STARTING. Tearing the hook out here anyway
-	// would strand session 2's `Ready` (and everything after it) in the
-	// channel with nothing to drain them.
-	if drained_stopped && STATE.load(Ordering::Acquire) == STATE_STOPPED {
+	// Only uninstall if STATE is still STOPPED. The `ButtplugDisconnected`
+	// handler may have synchronously called `buttplug.Start()`, which
+	// reinstalled the hook and moved STATE to STARTING. Tearing the hook out
+	// here anyway would strand session 2's `Ready` (and everything after it)
+	// in the channel with nothing to drain them.
+	if drained_disconnected && STATE.load(Ordering::Acquire) == STATE_STOPPED {
 		uninstall_timer(lua);
 	}
 	0

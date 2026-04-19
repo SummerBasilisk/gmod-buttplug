@@ -3,7 +3,8 @@
 
 #[macro_use] extern crate gmod;
 
-use std::sync::{Arc, OnceLock, RwLock};
+use std::future::Future;
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::sync::atomic::{AtomicU8, Ordering};
 
 use buttplug_client::ButtplugClient;
@@ -49,10 +50,12 @@ pub(crate) fn try_begin_stop(state: &AtomicU8) -> bool {
 // Globals
 // ---------------------------------------------------------------------------
 
-/// Tokio runtime. Created lazily on first `buttplug.Start()` and reused for the
-/// lifetime of the process. Never explicitly shut down (gmod modules typically
-/// only unload at process exit).
-static RUNTIME: OnceLock<Runtime> = OnceLock::new();
+/// Tokio runtime. Created lazily on first `buttplug.Start()`. Held inside a
+/// `Mutex<Option<Runtime>>` so that `gmod13_close` can take ownership and
+/// `shutdown_timeout` it — otherwise hwmgr scanning tasks (XInput, btleplug)
+/// keep polling on worker threads after the Windows loader has unmapped our
+/// code pages, and the host process crashes a few seconds later.
+static RUNTIME: OnceLock<Mutex<Option<Runtime>>> = OnceLock::new();
 
 /// The live `ButtplugClient`, wrapped in an `Arc` so async tasks can clone it.
 /// `None` when stopped. Writes happen only from the runtime worker.
@@ -64,15 +67,30 @@ pub(crate) static CLIENT: RwLock<Option<Arc<ButtplugClient>>> = RwLock::new(None
 static EVENT_CHAN: OnceLock<(Sender<events::LuaEvent>, Receiver<events::LuaEvent>)> =
 	OnceLock::new();
 
-pub(crate) fn runtime() -> &'static Runtime {
+fn runtime_cell() -> &'static Mutex<Option<Runtime>> {
 	RUNTIME.get_or_init(|| {
-		tokio::runtime::Builder::new_multi_thread()
-			.worker_threads(2)
-			.enable_all()
-			.thread_name("gmod-buttplug")
-			.build()
-			.expect("gmod-buttplug: failed to create tokio runtime")
+		Mutex::new(Some(
+			tokio::runtime::Builder::new_multi_thread()
+				.worker_threads(2)
+				.enable_all()
+				.thread_name("gmod-buttplug")
+				.build()
+				.expect("gmod-buttplug: failed to create tokio runtime"),
+		))
 	})
+}
+
+/// Spawn a future on the runtime. No-ops if the runtime has already been torn
+/// down (only happens during `gmod13_close`).
+pub(crate) fn spawn<F>(future: F)
+where
+	F: Future<Output = ()> + Send + 'static,
+{
+	if let Ok(guard) = runtime_cell().lock() {
+		if let Some(rt) = guard.as_ref() {
+			rt.spawn(future);
+		}
+	}
 }
 
 pub(crate) fn init_event_chan() -> &'static (Sender<events::LuaEvent>, Receiver<events::LuaEvent>) {
@@ -135,19 +153,39 @@ unsafe fn gmod13_open(lua: gmod::lua::State) -> i32 {
 
 #[gmod13_close]
 unsafe fn gmod13_close(_lua: gmod::lua::State) -> i32 {
-	// Best-effort graceful disconnect. The runtime keeps running — we don't
-	// force-shutdown it because btleplug needs time to release WinRT handles
-	// and srcds will exit the process shortly anyway.
+	// Three-phase teardown:
+	//   1. `stop_all_devices()` + a short BLE-flush window. `disconnect()` on
+	//      its own only drops the BLE link — firmware that caches state
+	//      (notably the Lovense Hush) happily keeps running after the link
+	//      dies. We have to send Vibrate:0 over the wire first.
+	//      `stop_all_devices()` returns as soon as the command lands in the
+	//      server's internal channel, not when BLE has acknowledged the
+	//      write, so the sleep gives the device task time to actually flush.
+	//   2. Ask the client to disconnect cleanly (blocks; lets the server drop
+	//      hwmgrs so btleplug has a chance to release WinRT handles).
+	//   3. Force-shutdown the tokio runtime with a timeout. This matters when
+	//      gmod unloads the DLL without exiting the process (e.g. exiting a
+	//      gamemode/server while a session is running). Without step 3, hwmgr
+	//      scanning tasks (XInput polls slots 0..3 on a TimedRetry loop) keep
+	//      executing on worker threads after the Windows loader unmaps our
+	//      code pages, and the process crashes a few seconds later.
 	//
-	// Prints here are mostly diagnostic: they confirm whether gmod13_close
-	// fired at all. In practice it only fires on DLL unload (= process exit
-	// in gmod), not on Lua state teardown — Lua-side `ShutDown` hooks are
-	// the right place for the addon-level kill switch.
+	// Prints bracket the teardown so it's obvious in the gmod console whether
+	// (and how far) we got through shutdown.
 	println!("[gmod-buttplug] gmod13_close: tearing down session");
-	if let Some(rt) = RUNTIME.get() {
-		if let Ok(mut guard) = CLIENT.write() {
-			if let Some(client) = guard.take() {
-				let _ = rt.block_on(async move { client.disconnect().await });
+	if let Some(cell) = RUNTIME.get() {
+		if let Ok(mut guard) = cell.lock() {
+			if let Some(rt) = guard.take() {
+				if let Ok(mut cg) = CLIENT.write() {
+					if let Some(client) = cg.take() {
+						let _ = rt.block_on(async move {
+							let _ = client.stop_all_devices().await;
+							tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+							let _ = client.disconnect().await;
+						});
+					}
+				}
+				rt.shutdown_timeout(std::time::Duration::from_secs(5));
 			}
 		}
 	}

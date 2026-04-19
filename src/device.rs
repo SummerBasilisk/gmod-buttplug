@@ -61,7 +61,7 @@ where
 	F: FnOnce(ButtplugClientDevice) -> Fut + Send + 'static,
 	Fut: std::future::Future<Output = ()> + Send + 'static,
 {
-	crate::runtime().spawn(async move {
+	crate::spawn(async move {
 		if crate::STATE.load(Ordering::Acquire) != crate::STATE_RUNNING {
 			return;
 		}

@@ -65,8 +65,8 @@ hook.Add("ButtplugError", "ButtplugDemo.OnError", function(err)
 	print("[buttplug] error: " .. err)
 end)
 
-hook.Add("ButtplugStopped", "ButtplugDemo.OnStopped", function()
-	print("[buttplug] stopped")
+hook.Add("ButtplugDisconnected", "ButtplugDemo.OnDisconnected", function()
+	print("[buttplug] disconnected")
 end)
 
 -- Safety net: when the Lua state is going away (gamemode switch, server
@@ -76,8 +76,8 @@ end)
 -- devices still running against a dead Lua state.
 hook.Add("ShutDown", "ButtplugDemo.OnShutDown", function()
 	if not buttplug.IsRunning() then return end
-	buttplug.StopAll()
-	buttplug.Stop()
+	buttplug.StopAllDevices()
+	buttplug.Disconnect()
 end)
 
 -- Pulse every connected device when the local player takes damage.
@@ -127,8 +127,8 @@ concommand.Add("buttplug_stop", function()
 		print("[buttplug] not running")
 		return
 	end
-	print("[buttplug] stopping session...")
-	buttplug.Stop()
+	print("[buttplug] disconnecting session...")
+	buttplug.Disconnect()
 end)
 
 concommand.Add("buttplug_scan", function()
@@ -150,7 +150,7 @@ concommand.Add("buttplug_panic", function()
 		print("[buttplug] not running")
 		return
 	end
-	buttplug.StopAll()
+	buttplug.StopAllDevices()
 	print("[buttplug] stopped all devices")
 end)
 
