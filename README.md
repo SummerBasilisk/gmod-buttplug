@@ -11,7 +11,7 @@ Supports all hardware buttplug-rs ships support for: BLE (via [btleplug](https:/
 
 ## 🤖 Disclaimer
 
-This project was mostly vibecoded with [Claude Code](https://claude.com/claude-code). A human drove the design decisions, reviewed the diffs, and ran the builds, but the bulk of the Rust and Lua was drafted by the model. Treat it accordingly: the code works and has been smoke-tested, but if something looks suspicious, trust your eyes — raise an issue or a PR.
+This project was mostly vibecoded with [Claude Code](https://claude.com/claude-code). A human drove the design decisions, reviewed the diffs, ran the builds, and tested against real hardware (Lovense Hush 2 over BLE, Xbox controller over XInput) — but the bulk of the Rust and Lua was drafted by the model. Treat it accordingly: if something looks suspicious, trust your eyes — raise an issue or a PR.
 
 ---
 
@@ -41,7 +41,7 @@ gmod-buttplug is **client-only** — the `buttplug.*` global lives on the client
 
 - The defensive `pcall(require, "buttplug")` pattern — players install the DLL themselves, so you can't assume it's present. Fall back to a one-line notice instead of spamming errors.
 - Console commands for `Start` / `Stop` / scan / panic-stop, so players have a kill switch.
-- Hook listeners for the full lifecycle (`ButtplugReady`, `ButtplugStartFailed`, `ButtplugDeviceAdded/Removed`, `ButtplugScanFinished`, `ButtplugError`, `ButtplugStopped`).
+- Hook listeners for the full lifecycle (`ButtplugReady`, `ButtplugStartFailed`, `ButtplugDeviceAdded/Removed`, `ButtplugScanFinished`, `ButtplugError`, `ButtplugDisconnected`).
 - A gameplay-driven effect (damage → vibrate → auto-stop after 500ms).
 
 ### ⚠️ ALWAYS ask for consent (don't *be* a buttplug)!
@@ -49,9 +49,9 @@ gmod-buttplug is **client-only** — the `buttplug.*` global lives on the client
 This module controls intimate hardware attached to a real person. Treat it that way. A careless or sneaky integration isn't a bug — it's a violation. The bar is higher than "does my code work":
 
 - **Opt-in, always.** Never call `buttplug.Start()` without an explicit action from the player — a console command, a menu toggle, a first-run prompt they actively confirm. "The addon loaded" is not consent. Convenience is not an excuse.
-- **Make stopping trivial.** A kill switch (`buttplug.StopAll()`) must be reachable in one keybind or one command, and it must work even if your addon is mid-effect, lagging, or broken. When in doubt, default to *stopped*.
+- **Make stopping trivial.** A kill switch (`buttplug.StopAllDevices()`) must be reachable in one keybind or one command, and it must work even if your addon is mid-effect, lagging, or broken. When in doubt, default to *stopped*.
 - **Be legible.** The player should always know what your addon is doing and why a device just moved. Tie effects to clear in-game events, document them, and don't bury controls three menus deep.
-- **Respect the `Buttplug*` hooks as shared infrastructure.** They're global: another addon may be driving the same session. Don't call `buttplug.Stop()` or `buttplug.StopAll()` except in response to the player asking you to — and never hijack hook names or assume you're the only listener.
+- **Respect the `Buttplug*` hooks as shared infrastructure.** They're global: another addon may be driving the same session. Don't call `buttplug.Disconnect()` or `buttplug.StopAllDevices()` except in response to the player asking you to — and never hijack hook names or assume you're the only listener.
 - **Don't mess with people.** No "funny" hidden triggers, no unannounced remote control by other players. If you're tempted to surprise someone, don't.
 
 If your integration can't clear this bar, don't ship it.
@@ -112,6 +112,8 @@ Output: `target/x86_64-apple-darwin/release/gmcl_buttplug_osx64.dll`.
 
 **Windows.** BLE works out of the box via WinRT. XInput is compiled in (Xbox-style controllers). No additional services required.
 
+> **Heads-up on XInput pads:** if Steam is running with Steam Input enabled for your controller (the default for Xbox pads in modern Steam), Steam captures the physical XInput slot and remaps it to a virtual device — buttplug will see the slot as empty and never emit `ButtplugDeviceAdded`. Either fully quit Steam (tray included) or disable Steam Input for that pad in Steam → Settings → Controller.
+
 **Linux.** Requires `bluez` running (`systemctl status bluetooth`). Unprivileged users may need to be in the `bluetooth` group to scan. Also requires D-Bus to be running (effectively always true on desktop distros).
 
 **macOS.** GMod itself doesn't ship with a Bluetooth usage-description entitlement, so modern macOS (Catalina+) will silently deny BLE access to the GMod process. Non-BLE managers (HID, serial, Lovense Connect) still work. This is a GMod limitation, not a limitation of this module.
@@ -125,12 +127,12 @@ All calls are fire-and-forget. Lifecycle progress and errors arrive as `hook.Run
 | Function | Description |
 |---|---|
 | `buttplug.Start()` | Spins up the in-process buttplug server and client. Returns `true` if a new session started, `false` if one is already running or in transition. `ButtplugReady` fires once the client is live; `ButtplugStartFailed(err)` fires if setup throws. |
-| `buttplug.Stop()` | Gracefully disconnects. `ButtplugStopped` fires once the session is fully torn down. |
+| `buttplug.Disconnect()` | Gracefully tears down the session. Issues `StopAllDevices()` first, waits for the BLE writes to flush, then drops the client. `ButtplugDisconnected` fires once teardown is complete. |
 | `buttplug.IsRunning()` | Returns `true` while a session is live. |
 | `buttplug.StartScanning()` | Begins device discovery. Scanning is always explicit — `Start()` does not auto-scan. |
 | `buttplug.StopScanning()` | Halts discovery. |
 | `buttplug.Devices()` | Returns an array of `Device` userdata for every currently-connected device. |
-| `buttplug.StopAll()` | Panic button — stops every connected device. |
+| `buttplug.StopAllDevices()` | Panic button — sends `Stop` to every connected device. The session stays live; you can keep issuing commands afterward. |
 | `buttplug.SetLogFilter(spec)` | Changes the tracing-subscriber filter at runtime for buttplug / btleplug diagnostics. Accepts any [`EnvFilter`](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html) spec (`"debug"`, `"btleplug=trace,buttplug=debug"`, `"warn"` to quiet). Returns `true` on success, `false` with a console message on parse failure. |
 
 ### Device userdata
@@ -153,8 +155,8 @@ Speeds and positions use the Percent convention (`0..1` floats), matching buttpl
 |---|---|---|
 | `ButtplugReady` | — | Session is live and ready for scanning / commands. |
 | `ButtplugStartFailed` | `err: string` | `Start()` succeeded but the async setup failed. |
-| `ButtplugStopped` | — | Session has fully torn down. |
-| `ButtplugScanFinished` | — | Scanning completed (via timeout or `StopScanning()`). |
+| `ButtplugDisconnected` | — | Session has fully torn down. |
+| `ButtplugScanFinished` | — | `StopScanning()` has taken effect. Fires in response to an explicit stop; a natural scan timeout is not a thing with the BLE/XInput hardware managers, so don't wait for one without also setting your own timer. |
 | `ButtplugDeviceAdded` | `dev: Device` | A new device connected. |
 | `ButtplugDeviceRemoved` | `dev: Device` | A device disconnected. |
 | `ButtplugError` | `err: string` | The client surfaced an error. |

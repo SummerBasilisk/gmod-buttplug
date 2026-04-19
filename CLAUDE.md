@@ -40,6 +40,8 @@ Rust **nightly** is pinned via `rust-toolchain.toml` — required by gmod-rs's `
 - **`DeviceConfigurationManagerBuilder::default()` is empty.** Zero protocols, zero specifiers — every discovered device falls through with "No viable protocols for hardware ... ignoring", nothing will ever match. Always go through `buttplug_server_device_config::load_protocol_configs(&None, &None, false)` to get a builder pre-populated from the bundled `buttplug-device-config-v4.json`. See `src/events.rs::build_client`. Easy to miss because the builder-default pattern in Rust usually gives a working-but-minimal instance, not an empty shell.
 - **Damage hooks are server-realm.** `EntityTakeDamage` never fires in a client-only module — not even in singleplayer, hooks are realm-scoped. The demo listens for `player_hurt` via `gameevent.Listen` instead. Trade-off: clientside `player_hurt` doesn't carry a `CTakeDamageInfo`, only `userid` + post-damage `health`.
 - **`println!` from tokio workers goes to the void.** See the `src/logging.rs` note above. If you need log output from anywhere other than the main Lua thread, route it through the tracing subscriber (which calls tier0 spew directly) — don't reach for `println!`.
+- **Steam Input hides XInput pads from buttplug.** If Steam is running with Steam Input enabled (Big Picture, or per-controller in Steam settings), it rebinds physical XInput controllers to a virtual device and the real slot reads empty — `XInputGetState(slot)` returns no-controller, so buttplug's XInput hwmgr never emits `DeviceAdded`. Fully quit Steam (tray included) or disable Steam Input for that pad to get the controller back. Not something we caused; it's how XInput works.
+- **XInput rumble stops when the app loses focus.** Since Windows 8, `XInputSetState` silently zero-rumbles any call from a background window — a foreground-app policy baked into the OS so background apps can't shake your controller. Net effect: alt-tabbing away from GMod (or just opening Task Manager) immediately stops an Xbox-pad vibration, even though buttplug's last command was non-zero. Matters for `examples/crash_test.lua` — the crash test is meaningless on XInput pads because focus loss kills rumble before the process does. Use a BLE/HID/Lovense device for that test.
 
 ## Lua contract
 
@@ -47,7 +49,7 @@ All commands fire-and-forget. Lifecycle is hook-only, never return values:
 
 - `buttplug.Start()` returns `true` if a session began, `false` if already running/transitioning. `ButtplugReady` fires when actually live; `ButtplugStartFailed(err)` on async setup failure.
 - Scanning is **explicit** — `Start()` does not auto-scan. Call `buttplug.StartScanning()` separately.
-- `buttplug.StopAll()` is the panic button — stops all devices without tearing down the session.
+- `buttplug.StopAllDevices()` is the panic button — stops all devices without tearing down the session. `buttplug.Disconnect()` tears the session down (and stops devices first, with a BLE-flush gap, before dropping the client). The distinction is deliberate — mirror the upstream names (`stop_all_devices` vs `disconnect`).
 - `Buttplug*` hooks are global; any addon that listens sees every session event. Integrations must use namespaced identifiers (`"MyAddon.OnReady"`).
 
 Speeds and positions are `0..1` floats (Percent convention). Module does not clamp.
