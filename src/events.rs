@@ -17,6 +17,8 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+use crate::{STATE, STATE_STOPPED};
+
 use buttplug_client::{ButtplugClient, ButtplugClientEvent};
 use buttplug_client_in_process::ButtplugInProcessClientConnectorBuilder;
 use buttplug_server::{device::ServerDeviceManagerBuilder, ButtplugServerBuilder};
@@ -159,7 +161,12 @@ pub(crate) unsafe extern "C-unwind" fn drain_tick(lua: gmod::lua::State) -> i32 
 		}
 	}
 
-	if drained_stopped {
+	// Only uninstall if STATE is still STOPPED. The `ButtplugStopped` handler
+	// may have synchronously called `buttplug.Start()`, which reinstalled the
+	// hook and moved STATE to STARTING. Tearing the hook out here anyway
+	// would strand session 2's `Ready` (and everything after it) in the
+	// channel with nothing to drain them.
+	if drained_stopped && STATE.load(Ordering::Acquire) == STATE_STOPPED {
 		uninstall_timer(lua);
 	}
 	0
