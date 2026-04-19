@@ -100,3 +100,74 @@ fn platform_names(target: &str) -> Result<(&'static str, &'static str), String> 
 		other => return Err(format!("unsupported target: {other}")),
 	})
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	fn s(x: &str) -> String { x.to_string() }
+
+	#[test]
+	fn split_out_target_empty_args() {
+		let (target, rest) = split_out_target(vec![]);
+		assert_eq!(target, None);
+		assert!(rest.is_empty());
+	}
+
+	#[test]
+	fn split_out_target_positional_form() {
+		let (target, rest) = split_out_target(vec![s("--target"), s("x86_64-pc-windows-msvc")]);
+		assert_eq!(target.as_deref(), Some("x86_64-pc-windows-msvc"));
+		assert!(rest.is_empty());
+	}
+
+	#[test]
+	fn split_out_target_equals_form() {
+		let (target, rest) = split_out_target(vec![s("--target=i686-pc-windows-msvc")]);
+		assert_eq!(target.as_deref(), Some("i686-pc-windows-msvc"));
+		assert!(rest.is_empty());
+	}
+
+	#[test]
+	fn split_out_target_preserves_other_args_in_order() {
+		let (target, rest) = split_out_target(vec![
+			s("--verbose"),
+			s("--target"),
+			s("x86_64-apple-darwin"),
+			s("--features=foo"),
+			s("-j4"),
+		]);
+		assert_eq!(target.as_deref(), Some("x86_64-apple-darwin"));
+		assert_eq!(rest, vec![s("--verbose"), s("--features=foo"), s("-j4")]);
+	}
+
+	#[test]
+	fn split_out_target_trailing_target_without_value_yields_none() {
+		// `--target` with nothing after it shouldn't crash — iter.next() returns None.
+		let (target, rest) = split_out_target(vec![s("--verbose"), s("--target")]);
+		assert_eq!(target, None);
+		assert_eq!(rest, vec![s("--verbose")]);
+	}
+
+	#[test]
+	fn platform_names_all_supported_targets_map_correctly() {
+		let cases = [
+			("x86_64-pc-windows-msvc",   "gmcl_buttplug.dll",      "gmcl_buttplug_win64.dll"),
+			("i686-pc-windows-msvc",     "gmcl_buttplug.dll",      "gmcl_buttplug_win32.dll"),
+			("x86_64-unknown-linux-gnu", "libgmcl_buttplug.so",    "gmcl_buttplug_linux64.dll"),
+			("i686-unknown-linux-gnu",   "libgmcl_buttplug.so",    "gmcl_buttplug_linux.dll"),
+			("x86_64-apple-darwin",      "libgmcl_buttplug.dylib", "gmcl_buttplug_osx64.dll"),
+		];
+		for (triple, src, dst) in cases {
+			let (got_src, got_dst) = platform_names(triple).expect(triple);
+			assert_eq!(got_src, src, "cargo output name for {triple}");
+			assert_eq!(got_dst, dst, "gmod artifact name for {triple}");
+		}
+	}
+
+	#[test]
+	fn platform_names_unsupported_target_returns_err_with_triple() {
+		let err = platform_names("aarch64-unknown-linux-gnu").unwrap_err();
+		assert!(err.contains("aarch64-unknown-linux-gnu"), "err was: {err}");
+	}
+}

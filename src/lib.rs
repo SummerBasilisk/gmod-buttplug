@@ -4,7 +4,7 @@
 #[macro_use] extern crate gmod;
 
 use std::sync::{Arc, OnceLock, RwLock};
-use std::sync::atomic::AtomicU8;
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use buttplug_client::ButtplugClient;
 use crossbeam_channel::{unbounded, Receiver, Sender};
@@ -25,6 +25,24 @@ pub(crate) const STATE_RUNNING:  u8 = 2;
 pub(crate) const STATE_STOPPING: u8 = 3;
 
 pub(crate) static STATE: AtomicU8 = AtomicU8::new(STATE_STOPPED);
+
+/// Only `STOPPED → STARTING` is a legal start edge. Returns `true` if the CAS
+/// landed. Lifted to a free function so tests can exercise it against a local
+/// atomic without touching the global [`STATE`].
+#[inline]
+pub(crate) fn try_begin_start(state: &AtomicU8) -> bool {
+	state
+		.compare_exchange(STATE_STOPPED, STATE_STARTING, Ordering::AcqRel, Ordering::Acquire)
+		.is_ok()
+}
+
+/// Only `RUNNING → STOPPING` is a legal stop edge. See [`try_begin_start`].
+#[inline]
+pub(crate) fn try_begin_stop(state: &AtomicU8) -> bool {
+	state
+		.compare_exchange(STATE_RUNNING, STATE_STOPPING, Ordering::AcqRel, Ordering::Acquire)
+		.is_ok()
+}
 
 // ---------------------------------------------------------------------------
 // Globals
@@ -121,4 +139,41 @@ unsafe fn gmod13_close(_lua: gmod::lua::State) -> i32 {
 	}
 	STATE.store(STATE_STOPPED, std::sync::atomic::Ordering::Release);
 	0
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn start_from_stopped_succeeds_and_transitions() {
+		let s = AtomicU8::new(STATE_STOPPED);
+		assert!(try_begin_start(&s));
+		assert_eq!(s.load(Ordering::Acquire), STATE_STARTING);
+	}
+
+	#[test]
+	fn start_from_non_stopped_states_is_refused() {
+		for st in [STATE_STARTING, STATE_RUNNING, STATE_STOPPING] {
+			let s = AtomicU8::new(st);
+			assert!(!try_begin_start(&s), "expected refusal from state {st}");
+			assert_eq!(s.load(Ordering::Acquire), st, "state unexpectedly moved");
+		}
+	}
+
+	#[test]
+	fn stop_from_running_succeeds_and_transitions() {
+		let s = AtomicU8::new(STATE_RUNNING);
+		assert!(try_begin_stop(&s));
+		assert_eq!(s.load(Ordering::Acquire), STATE_STOPPING);
+	}
+
+	#[test]
+	fn stop_from_non_running_states_is_refused() {
+		for st in [STATE_STOPPED, STATE_STARTING, STATE_STOPPING] {
+			let s = AtomicU8::new(st);
+			assert!(!try_begin_stop(&s), "expected refusal from state {st}");
+			assert_eq!(s.load(Ordering::Acquire), st, "state unexpectedly moved");
+		}
+	}
 }

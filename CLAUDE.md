@@ -45,6 +45,25 @@ All commands fire-and-forget. Lifecycle is hook-only, never return values:
 
 Speeds and positions are `0..1` floats (Percent convention). Module does not clamp.
 
+## Testing
+
+Inline `#[cfg(test)] mod tests` next to what they test — no top-level `tests/` directory. Run with `cargo test --workspace`; CI runs the same on ubuntu-latest.
+
+What's covered:
+
+- `src/update_check.rs` — `parse_version` / `is_newer` edge cases (prerelease suffixes, missing segments).
+- `src/lib.rs` — state-machine CAS transitions (`try_begin_start`, `try_begin_stop`). Pure helpers that take `&AtomicU8`, so tests use local atomics — no `serial_test`, no global-state contamination.
+- `xtask/src/main.rs` — `split_out_target` (CLI arg parsing) and `platform_names` (target-triple → artifact mapping).
+
+What's deliberately *not* covered:
+
+- The FFI surface in `api.rs` / `device.rs` / `events.rs` (timer install, hook-run helpers). These take `gmod::lua::State` and need a live GMod process. The ecosystem norm is to leave this untested at the unit level — gmod-rs itself has zero FFI unit tests.
+- The buttplug async session (`build_client`, `run_session`). Needs real hardware or a fake hwmgr stack that's not trivially available. btleplug's own tests are `#[ignore]` and require a physical BLE peripheral.
+
+Pre-release smoke test is [`examples/autorun.lua`](examples/autorun.lua) in a live GMod client with a real device: load → `buttplug_start` → `buttplug_scan` → pair device → damage the player → verify vibration and auto-stop.
+
+GLuaTest (the CFC-Servers framework that e.g. `RaphaelIT7/gmod-holylib` uses) was evaluated and rejected — it runs under `srcds`, which is server-realm only; our module is client-only, and our riskiest logic is hardware I/O that CI runners can't provide anyway.
+
 ## CI / release
 
 - `.github/workflows/build.yml` — push/PR/dispatch. Matrix of 5 targets. Caches via Swatinem/rust-cache (save-if guarded to main branch only). sccache was tried and removed — it never fires when Swatinem restores `target/` fully, which is the common case.

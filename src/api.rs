@@ -5,7 +5,7 @@
 
 use std::sync::atomic::Ordering;
 
-use crate::{events, STATE, STATE_RUNNING, STATE_STARTING, STATE_STOPPED, STATE_STOPPING};
+use crate::{events, try_begin_start, try_begin_stop, STATE, STATE_RUNNING};
 
 pub(crate) unsafe fn register(lua: gmod::lua::State) {
 	crate::device::register_metatable(lua);
@@ -27,10 +27,7 @@ pub(crate) unsafe fn register(lua: gmod::lua::State) {
 /// a session was started (Ready/StartFailed will follow as hooks), `false` if
 /// a session is already running or in transition.
 unsafe extern "C-unwind" fn start(lua: gmod::lua::State) -> i32 {
-	if STATE
-		.compare_exchange(STATE_STOPPED, STATE_STARTING, Ordering::AcqRel, Ordering::Acquire)
-		.is_err()
-	{
+	if !try_begin_start(&STATE) {
 		lua.push_boolean(false);
 		return 1;
 	}
@@ -43,10 +40,7 @@ unsafe extern "C-unwind" fn start(lua: gmod::lua::State) -> i32 {
 }
 
 unsafe extern "C-unwind" fn stop(_lua: gmod::lua::State) -> i32 {
-	if STATE
-		.compare_exchange(STATE_RUNNING, STATE_STOPPING, Ordering::AcqRel, Ordering::Acquire)
-		.is_err()
-	{
+	if !try_begin_stop(&STATE) {
 		return 0;
 	}
 	if let Some(client) = crate::CLIENT.read().ok().and_then(|g| g.as_ref().cloned()) {
