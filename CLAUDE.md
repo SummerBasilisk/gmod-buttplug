@@ -32,7 +32,7 @@ Rust **nightly** is pinned via `rust-toolchain.toml` — required by gmod-rs's `
 - `src/events.rs` — async session driver + crossbeam channel piping `LuaEvent`s to a main-thread timer that fires `hook.Run("Buttplug<Name>", ...)`
 - `src/update_check.rs` — detached thread pings GitHub Releases on module load, prints a one-line notice if behind. Failures silently swallowed. Has unit tests for `parse_version` / `is_newer` (prerelease suffix handling matters)
 - `xtask/src/main.rs` — build helper; only two commands: `build` and (implicit) help
-- `examples/autorun.lua` — canonical integration reference. Opens with defensive `pcall(require, "buttplug")`. Addon authors should copy from this file
+- `examples/buttplug_demo.lua` — canonical integration reference. Opens with defensive `pcall(require, "buttplug")`. Addon authors should copy from this file
 
 ## Lua contract
 
@@ -60,7 +60,7 @@ What's deliberately *not* covered:
 - The FFI surface in `api.rs` / `device.rs` / `events.rs` (timer install, hook-run helpers). These take `gmod::lua::State` and need a live GMod process. The ecosystem norm is to leave this untested at the unit level — gmod-rs itself has zero FFI unit tests.
 - The buttplug async session (`build_client`, `run_session`). Needs real hardware or a fake hwmgr stack that's not trivially available. btleplug's own tests are `#[ignore]` and require a physical BLE peripheral.
 
-Pre-release smoke test is [`examples/autorun.lua`](examples/autorun.lua) in a live GMod client with a real device: load → `buttplug_start` → `buttplug_scan` → pair device → damage the player → verify vibration and auto-stop.
+Pre-release smoke test is [`examples/buttplug_demo.lua`](examples/buttplug_demo.lua) in a live GMod client with a real device: load → `buttplug_start` → `buttplug_scan` → pair device → damage the player → verify vibration and auto-stop.
 
 GLuaTest (the CFC-Servers framework that e.g. `RaphaelIT7/gmod-holylib` uses) was evaluated and rejected — it runs under `srcds`, which is server-realm only; our module is client-only, and our riskiest logic is hardware I/O that CI runners can't provide anyway.
 

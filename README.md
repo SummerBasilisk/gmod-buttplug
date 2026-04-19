@@ -37,7 +37,7 @@ Currently client-only. A serverside variant (`gmsv_`) may come later.
 
 gmod-buttplug is **client-only** — the `buttplug.*` global lives on the client, and there's no serverside API to call into. Your integration is a clientside Lua file that your addon/gamemode ships to players (don't forget to `AddCSLuaFile` it serverside so it actually gets sent).
 
-[`examples/autorun.lua`](examples/autorun.lua) is the best reference — it's a real, working integration you can copy and whittle down. It covers:
+[`examples/buttplug_demo.lua`](examples/buttplug_demo.lua) is the best reference — it's a real, working integration you can copy and whittle down. It covers:
 
 - The defensive `pcall(require, "buttplug")` pattern — players install the DLL themselves, so you can't assume it's present. Fall back to a one-line notice instead of spamming errors.
 - Console commands for `Start` / `Stop` / scan / panic-stop, so players have a kill switch.
@@ -160,7 +160,7 @@ Speeds and positions use the Percent convention (`0..1` floats), matching buttpl
 
 ## 💡 Example
 
-See [`examples/autorun.lua`](examples/autorun.lua) for a minimal demo — hook listeners, console commands, and a damage-reactive vibrate.
+See [`examples/buttplug_demo.lua`](examples/buttplug_demo.lua) for a minimal demo — hook listeners, console commands, and a damage-reactive vibrate.
 
 ## ⚖️ License
 
