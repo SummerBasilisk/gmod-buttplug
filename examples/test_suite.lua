@@ -145,32 +145,39 @@ end
 -- Lifecycle
 -- ---------------------------------------------------------------------------
 
+-- Pure state-machine assertions (CAS edges, concurrent transitions,
+-- full round-trip sequence, retry-after-failure) live in Rust unit
+-- tests in `src/lib.rs` — those are cheaper, run on every PR, and
+-- don't need a live GMod process. The steps below only cover things
+-- Rust can't reach: the tokio runtime, the buttplug-rs client
+-- lifecycle, and the PreRender hook pipeline firing events back up
+-- to Lua.
 local function runLifecycle()
 	log("== Lifecycle ==")
-	log("1/6: Start → Ready")
+	log("1/5: Start → Ready")
 	expect(buttplug.Start(), "Start() returned false from STOPPED")
 	expect(waitFor("ButtplugReady", 10), "timed out waiting for Ready")
 	expect(buttplug.IsRunning(), "IsRunning() false after Ready fired")
 
-	log("2/6: duplicate Start while running is refused")
-	expect(buttplug.Start() == false, "Start() returned true while already running")
-
-	log("3/6: Disconnect → Disconnected")
+	log("2/5: Disconnect → Disconnected")
 	buttplug.Disconnect()
 	expect(waitFor("ButtplugDisconnected", 10), "timed out waiting for Disconnected")
 	expect(not buttplug.IsRunning(), "IsRunning() true after Disconnected fired")
 
-	log("4/6: restart (Start → Ready again)")
+	log("3/5: restart (Start → Ready again)")
+	-- Catches tokio runtime / buttplug-rs client wedges that Rust state-
+	-- machine tests can't see — the atomics permit the sequence, but the
+	-- actual recreate could still deadlock.
 	expect(buttplug.Start(), "Start() returned false on restart")
 	expect(waitFor("ButtplugReady", 10), "timed out waiting for Ready on restart")
 
-	log("5/6: back-to-back StartScanning does not crash")
+	log("4/5: back-to-back StartScanning does not crash")
 	buttplug.StartScanning()
 	buttplug.StartScanning()
 	delay(2)
 	expect(buttplug.IsRunning(), "session died after double StartScanning")
 
-	log("6/6: Disconnect mid-scan reaches Disconnected cleanly")
+	log("5/5: Disconnect mid-scan reaches Disconnected cleanly")
 	buttplug.Disconnect()
 	expect(waitFor("ButtplugDisconnected", 10), "timed out waiting for Disconnected (mid-scan)")
 	expect(not buttplug.IsRunning(), "IsRunning() true after mid-scan Disconnect")
