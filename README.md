@@ -11,7 +11,7 @@ Supports all hardware buttplug-rs ships support for: BLE (via [btleplug](https:/
 
 ## 🤖 Disclaimer
 
-This project was mostly vibecoded with [Claude Code](https://claude.com/claude-code). A human drove the design decisions, reviewed the diffs, ran the builds, and tested against real hardware (Lovense Hush 2 over BLE, Xbox controller over XInput) — but the bulk of the Rust and Lua was drafted by the model. Treat it accordingly: if something looks suspicious, trust your eyes — raise an issue or a PR.
+This project was mostly vibecoded with [Claude Code](https://claude.com/claude-code). A human drove the design decisions, reviewed the diffs, ran the builds, and tested against real hardware (Lovense Hush 2 / Calor over BLE, Xbox controller over XInput) — but the bulk of the Rust and Lua was drafted by the model. Treat it accordingly: if something looks suspicious, trust your eyes — raise an issue or a PR.
 
 ---
 
