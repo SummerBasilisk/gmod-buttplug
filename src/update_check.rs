@@ -109,4 +109,44 @@ mod tests {
 		// "0.2.1-rc1" parses as 0.2.1, which is newer than 0.2.0.
 		assert!(is_newer("0.2.1-rc1", "0.2.0"));
 	}
+
+	// ---- parse_version direct edge cases ----
+	//
+	// is_newer covers the comparison semantics; these assert that the parser
+	// itself is tolerant of the weird things the GitHub Releases API might
+	// hand us in `tag_name` — empty strings, partial versions, junk, or
+	// pre-release suffixes on segments other than the patch.
+
+	#[test]
+	fn parse_version_empty_is_all_zero() {
+		assert_eq!(parse_version(""), (0, 0, 0));
+	}
+
+	#[test]
+	fn parse_version_missing_trailing_segments_default_to_zero() {
+		assert_eq!(parse_version("1"),   (1, 0, 0));
+		assert_eq!(parse_version("1.2"), (1, 2, 0));
+	}
+
+	#[test]
+	fn parse_version_extra_segments_are_ignored() {
+		// Only major.minor.patch is meaningful; anything further is dropped.
+		assert_eq!(parse_version("1.2.3.4"), (1, 2, 3));
+	}
+
+	#[test]
+	fn parse_version_non_numeric_segments_become_zero() {
+		assert_eq!(parse_version("abc"),   (0, 0, 0));
+		assert_eq!(parse_version("1.x.3"), (1, 0, 3));
+	}
+
+	#[test]
+	fn parse_version_prerelease_suffix_stripped_per_segment() {
+		// Pre-release suffix is stripped from each segment individually. A
+		// suffix on the patch (the common case) and a suffix on earlier
+		// segments both work.
+		assert_eq!(parse_version("1.2.3-rc.1"),  (1, 2, 3));
+		assert_eq!(parse_version("1.2-beta.0"),  (1, 2, 0));
+		assert_eq!(parse_version("1-alpha"),     (1, 0, 0));
+	}
 }

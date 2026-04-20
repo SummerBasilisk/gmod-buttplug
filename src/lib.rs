@@ -229,4 +229,90 @@ mod tests {
 			assert_eq!(s.load(Ordering::Acquire), st, "state unexpectedly moved");
 		}
 	}
+
+	// Full round-trip: mirrors `buttplug.Start() → Ready → Disconnect →
+	// Disconnected → Start()` from `examples/test_suite.lua::runLifecycle`.
+	// The `store` calls simulate the completion edges (STARTING→RUNNING,
+	// STOPPING→STOPPED) that happen in `events::run_session` after the
+	// async setup / teardown resolves.
+	#[test]
+	fn full_lifecycle_round_trip() {
+		let s = AtomicU8::new(STATE_STOPPED);
+
+		assert!(try_begin_start(&s));
+		assert_eq!(s.load(Ordering::Acquire), STATE_STARTING);
+		s.store(STATE_RUNNING, Ordering::Release); // Ready
+
+		assert!(try_begin_stop(&s));
+		assert_eq!(s.load(Ordering::Acquire), STATE_STOPPING);
+		s.store(STATE_STOPPED, Ordering::Release); // Disconnected
+
+		// Restart must be legal.
+		assert!(try_begin_start(&s));
+		assert_eq!(s.load(Ordering::Acquire), STATE_STARTING);
+	}
+
+	// `build_client` failure path: `run_session` stores STOPPED back after
+	// emitting StartFailed, so the player can retry. This guards against a
+	// regression where a failed Start would leave the state wedged.
+	#[test]
+	fn start_can_be_retried_after_failure() {
+		let s = AtomicU8::new(STATE_STOPPED);
+		assert!(try_begin_start(&s));
+		s.store(STATE_STOPPED, Ordering::Release); // simulate async failure
+		assert!(try_begin_start(&s), "retry after failed start must succeed");
+		assert_eq!(s.load(Ordering::Acquire), STATE_STARTING);
+	}
+
+	// CAS correctness: the whole reason we use `compare_exchange` instead of
+	// load+store is that two concurrent Start attempts must not both see
+	// STOPPED and both transition. Hammering from many threads catches any
+	// accidental rewrite to a non-atomic primitive.
+	#[test]
+	fn concurrent_start_attempts_only_one_wins() {
+		use std::sync::Arc;
+		use std::sync::atomic::AtomicUsize;
+		use std::thread;
+
+		let s    = Arc::new(AtomicU8::new(STATE_STOPPED));
+		let wins = Arc::new(AtomicUsize::new(0));
+
+		let threads: Vec<_> = (0..16).map(|_| {
+			let s    = Arc::clone(&s);
+			let wins = Arc::clone(&wins);
+			thread::spawn(move || {
+				if try_begin_start(&s) {
+					wins.fetch_add(1, Ordering::Relaxed);
+				}
+			})
+		}).collect();
+		for t in threads { t.join().unwrap(); }
+
+		assert_eq!(wins.load(Ordering::Relaxed), 1);
+		assert_eq!(s.load(Ordering::Acquire), STATE_STARTING);
+	}
+
+	#[test]
+	fn concurrent_stop_attempts_only_one_wins() {
+		use std::sync::Arc;
+		use std::sync::atomic::AtomicUsize;
+		use std::thread;
+
+		let s    = Arc::new(AtomicU8::new(STATE_RUNNING));
+		let wins = Arc::new(AtomicUsize::new(0));
+
+		let threads: Vec<_> = (0..16).map(|_| {
+			let s    = Arc::clone(&s);
+			let wins = Arc::clone(&wins);
+			thread::spawn(move || {
+				if try_begin_stop(&s) {
+					wins.fetch_add(1, Ordering::Relaxed);
+				}
+			})
+		}).collect();
+		for t in threads { t.join().unwrap(); }
+
+		assert_eq!(wins.load(Ordering::Relaxed), 1);
+		assert_eq!(s.load(Ordering::Acquire), STATE_STOPPING);
+	}
 }
