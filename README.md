@@ -112,9 +112,11 @@ Output: `target/x86_64-apple-darwin/release/gmcl_buttplug_osx64.dll`.
 
 **Windows.** BLE works out of the box via WinRT. XInput is compiled in (Xbox-style controllers). No additional services required.
 
-> **Heads-up on XInput pads:** if Steam is running with Steam Input enabled for your controller (the default for Xbox pads in modern Steam), Steam captures the physical XInput slot and remaps it to a virtual device — buttplug will see the slot as empty and never emit `ButtplugDeviceAdded`. Either fully quit Steam (tray included) or disable Steam Input for that pad in Steam → Settings → Controller.
+> **Heads-up on XInput pads:** if Steam is running with Steam Input enabled for your controller (the default for Xbox pads in modern Steam), Steam captures the physical XInput slot and remaps it to a virtual device — buttplug will see the slot as empty and never emit `ButtplugDeviceAdded`. You can disable Steam Input in Steam → Garry's Mod → Properties → Controller.
 
 **Linux.** Requires `bluez` running (`systemctl status bluetooth`). Unprivileged users may need to be in the `bluetooth` group to scan. Also requires D-Bus to be running (effectively always true on desktop distros).
+
+> **32-bit Linux (GMod's default client):** the `Lovense Connect` and `Lovense USB dongle` hardware managers are disabled on i686 Linux because they crash the process on scan. Other transports are unaffected — Lovense BLE toys still pair via `btleplug`, and Lovense toys that identify as generic HID still pair via the regular HID manager. 64-bit Linux, Windows, and macOS all use the full set.
 
 **macOS.** GMod itself doesn't ship with a Bluetooth usage-description entitlement, so modern macOS (Catalina+) will silently deny BLE access to the GMod process. Non-BLE managers (HID, serial, Lovense Connect) still work. This is a GMod limitation, not a limitation of this module.
 

@@ -25,7 +25,9 @@ use buttplug_server::{device::ServerDeviceManagerBuilder, ButtplugServerBuilder}
 use buttplug_server_device_config::load_protocol_configs;
 use buttplug_server_hwmgr_btleplug::BtlePlugCommunicationManagerBuilder;
 use buttplug_server_hwmgr_hid::HidCommunicationManagerBuilder;
+#[cfg(not(all(target_os = "linux", target_arch = "x86")))]
 use buttplug_server_hwmgr_lovense_connect::LovenseConnectServiceCommunicationManagerBuilder;
+#[cfg(not(all(target_os = "linux", target_arch = "x86")))]
 use buttplug_server_hwmgr_lovense_dongle::LovenseHIDDongleCommunicationManagerBuilder;
 use buttplug_server_hwmgr_serial::SerialPortCommunicationManagerBuilder;
 #[cfg(target_os = "windows")]
@@ -60,8 +62,18 @@ async fn build_client() -> Result<ButtplugClient, String> {
 	dm.comm_manager(BtlePlugCommunicationManagerBuilder::default());
 	dm.comm_manager(HidCommunicationManagerBuilder::default());
 	dm.comm_manager(SerialPortCommunicationManagerBuilder::default());
-	dm.comm_manager(LovenseConnectServiceCommunicationManagerBuilder::default());
-	dm.comm_manager(LovenseHIDDongleCommunicationManagerBuilder::default());
+	// Both Lovense-specific hwmgrs (Connect and HID Dongle) crash hl2 on 32-bit
+	// Linux the instant scanning begins — bisected down to these two crates with
+	// btleplug, HID, and Serial all confirmed safe individually. Root cause not
+	// yet identified; disabling them there is the only known workaround. Users
+	// on i686 Linux lose Lovense Connect and Lovense USB-dongle support as a
+	// result; every other transport (including Lovense-branded BLE toys via
+	// btleplug, and Lovense toys over the regular HID manager) still works.
+	#[cfg(not(all(target_os = "linux", target_arch = "x86")))]
+	{
+		dm.comm_manager(LovenseConnectServiceCommunicationManagerBuilder::default());
+		dm.comm_manager(LovenseHIDDongleCommunicationManagerBuilder::default());
+	}
 	#[cfg(target_os = "windows")]
 	dm.comm_manager(XInputDeviceCommunicationManagerBuilder::default());
 
