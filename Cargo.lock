@@ -1244,7 +1244,7 @@ dependencies = [
 
 [[package]]
 name = "gmod-buttplug"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "buttplug_client",
  "buttplug_client_in_process",
