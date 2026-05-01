@@ -26,21 +26,23 @@ pub fn spawn() {
 fn run() {
 	let current = env!("CARGO_PKG_VERSION");
 
-	let agent = ureq::AgentBuilder::new()
-		.timeout(Duration::from_secs(5))
-		.user_agent(concat!(
-			"gmod-buttplug/",
-			env!("CARGO_PKG_VERSION"),
-			" (+https://github.com/SummerBasilisk/gmod-buttplug)"
-		))
-		.build();
+	let agent = ureq::Agent::new_with_config(
+		ureq::Agent::config_builder()
+			.timeout_global(Some(Duration::from_secs(5)))
+			.user_agent(concat!(
+				"gmod-buttplug/",
+				env!("CARGO_PKG_VERSION"),
+				" (+https://github.com/SummerBasilisk/gmod-buttplug)"
+			))
+			.build()
+	);
 
-	let resp = match agent.get(LATEST_RELEASE_URL).call() {
+	let mut resp = match agent.get(LATEST_RELEASE_URL).call() {
 		Ok(r) => r,
 		Err(_) => return, // network error, rate-limit (403), 404, etc.
 	};
 
-	let body: serde_json::Value = match resp.into_json() {
+	let body: serde_json::Value = match resp.body_mut().read_json() {
 		Ok(v) => v,
 		Err(_) => return,
 	};
