@@ -24,6 +24,14 @@ Target triple → artifact filename (see `xtask/src/main.rs:platform_names`):
 
 Rust **nightly** is pinned via `rust-toolchain.toml` — required by gmod-rs's `gmcl` feature. Don't try to downgrade to stable.
 
+## Dependency hygiene
+
+A 7-day cooldown is enforced on all dependency updates via [`cargo-cooldown`](https://crates.io/crates/cargo-cooldown). Config lives in `cooldown.toml` at the repo root. Rationale: most malicious-publish supply-chain attacks get caught and yanked within a few days, so an age floor catches the short-lived ones without much friction.
+
+The cooldown only kicks in for commands that *resolve* dependencies — `cargo cooldown update` (and `--breaking`), and `cargo cooldown build` when adding a new dep without a lockfile entry. Plain `cargo build` / `cargo test` against an already-resolved `Cargo.lock` is unaffected; nothing is gained by routing those through the wrapper.
+
+Install with `cargo install --locked cargo-cooldown`. Don't run `cargo update` directly — use `cargo cooldown update`. If you genuinely need a fresh version (security fix in upstream that's <7 days old), the wrapper prompts on the unavoidable case; accept deliberately rather than disabling the cooldown.
+
 ## Source map
 
 - `src/lib.rs` — entry points (`gmod13_open` / `gmod13_close`), state machine (STOPPED/STARTING/RUNNING/STOPPING atomic), tokio runtime + ButtplugClient globals, panic handler
@@ -98,6 +106,7 @@ Worth knowing: the rustls dep graph is a bit wasteful — both `ring` (via `ureq
 
 - Don't change the xtask alias to debug mode. Release mode is the whole point.
 - Don't use floating major tags for GitHub Actions — always pin to an explicit patch version.
+- Don't run plain `cargo update`. Use `cargo cooldown update` so the 7-day age floor in `cooldown.toml` is enforced.
 - Don't add features, fallbacks, or abstractions speculatively. This is a small project; keep it lean.
 - Don't auto-scan after `Start()`, don't auto-start on module load, don't do anything with devices without explicit player opt-in. The consent bar applies to our defaults too, not just to addon authors.
 - Don't remove the Co-Authored-By trailer from Claude-assisted commits.

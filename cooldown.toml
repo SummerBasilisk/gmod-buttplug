@@ -1,0 +1,40 @@
+# cargo-cooldown configuration.
+#
+# Supply-chain hygiene: refuse to pull in any crate version published less
+# than 7 days ago. Most malicious-publish supply-chain attacks (compromised
+# maintainer credentials, typosquats that briefly impersonate a popular
+# crate) are detected and yanked within a few days, so a 7-day floor catches
+# the short-lived ones without much friction on legitimate updates.
+#
+# Equivalent in spirit to npm/pnpm's `minimumReleaseAge` and uv's
+# `--exclude-newer`.
+#
+# Requires the `cargo-cooldown` wrapper:
+#   cargo install --locked cargo-cooldown
+#
+# Then use `cargo cooldown <subcommand>` instead of plain `cargo` for any
+# command that resolves dependencies — most importantly:
+#   cargo cooldown update
+#   cargo cooldown update --breaking
+#
+# Plain `cargo build` / `cargo test` against an existing committed Cargo.lock
+# is fine — the lockfile already pins exact versions, no resolution happens.
+
+# 7 days = 7 * 24 * 60 minutes.
+cooldown_minutes = 10080
+
+# How to handle versions Cargo's resolver is forced to pick because some
+# other constraint demands them, even though they're inside the cooldown
+# window. `cargo_compatible` means: respect Cargo's resolution but flag
+# when a fresh version is unavoidable.
+enforcement = "cargo_compatible"
+
+# When an unavoidable fresh version comes up, ask before accepting it. The
+# alternative ("deny") would hard-fail; "prompt" lets a human eyeball the
+# crate + version before letting it through.
+cargo_compatible_accept = "prompt"
+
+# Use the pre-run Cargo.lock as a minimum-version floor: never silently
+# downgrade a crate below what's already locked, even if the cooldown
+# window technically rules out the locked version too.
+lockfile_baseline = "floor"
